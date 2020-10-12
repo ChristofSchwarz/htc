@@ -1,3 +1,0 @@
-TEST:LOAD * INLINE [
-"123,456"
-] (no labels);
