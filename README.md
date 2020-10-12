@@ -40,7 +40,7 @@ FOR vUrlIdx = 1 TO NoOfRows('$URLs')
   DROP TABLE SCRIPT;
 NEXT vUrlIdx;
 //DROP TABLE $URLs;
-
+$(00_Subs.qvs);
 $(01_Main.qvs);
 $(02_Variables.qvs);
 $(03_Preload Data.qvs);
