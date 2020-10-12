@@ -101,7 +101,7 @@ FOR v = 1 TO NoOfRows('LoadList') //EACH vFileName IN 'KER.xls', 'Bilanz.xls', '
         Berichte
     WHERE 
         IsGetICval
-        AND '$(vFileName)' LIKE (Bericht & '.*');
+        AND '$(vReportName)' = Bericht;
 
     CONCATENATE (BerichtZeilen)
     LOAD * RESIDENT BerichtZeilen_tmp;
