@@ -1,3 +1,4 @@
+TRACE ---------------------------------------;
 TRACE Including 04_ExcelStruktur.qvs;
 
 Berichte: LOAD * INLINE [Bericht, %BerichtZeile];

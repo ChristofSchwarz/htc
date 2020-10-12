@@ -1,3 +1,4 @@
+TRACE ---------------------------------------;
 TRACE Including 99_Exit.qvs;
 CALL Cleanup;
 EXIT SCRIPT;

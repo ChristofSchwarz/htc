@@ -1,3 +1,4 @@
+TRACE ---------------------------------------;
 TRACE Including 02_Variables.qvs;
 SET vShowCond1 = Len(Bericht) * Len(Datenarten) * Len(Betrieb);
 SET vShowMsg1 = 'Nur ein Bericht, nur ein Betrieb, nur eine Datenart';

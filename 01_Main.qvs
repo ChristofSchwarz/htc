@@ -1,3 +1,4 @@
+TRACE ---------------------------------------;
 TRACE including 01_Main.qvs;
 SET ThousandSep='.';
 SET DecimalSep=',';

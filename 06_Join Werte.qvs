@@ -1,3 +1,4 @@
+TRACE ---------------------------------------;
 TRACE Including 06_Join Werte.qvs;
 
 LEFT JOIN (BerichtZeilen)

@@ -1,3 +1,4 @@
+TRACE ---------------------------------------;
 TRACE Including 03_Preload Data.qvs;
 
 // Hier geben wir an, welche Tabellen wir brauchen.

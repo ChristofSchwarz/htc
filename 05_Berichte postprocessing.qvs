@@ -1,3 +1,4 @@
+TRACE ---------------------------------------;
 TRACE 05_Berichte postprocessing.qvs;
 
 // Explode Berichte (kartesiches Produkt mit allen Betrieb_ID)
