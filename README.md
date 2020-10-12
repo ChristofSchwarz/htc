@@ -9,10 +9,13 @@ sh push.sh
 ```
 To include this Qlik Script files (*.qvf) from Qlik cloud, use the REST Connector in this way:
 ```
-LIB CONNECT TO 'Igel:REST_GET';
-
-$URLs: LOAD * INLINE [
-  https://raw.githubusercontent.com/ChristofSchwarz/htc/main/00_Subs.qvs
+LIB CONNECT TO '<<< put your http-REST-GET lib connection >>>';
+$URLs: 
+LOAD 
+  @1 AS $url,
+  If(Len(@2), @2, Replace(SubField(@1,'/',-1),'%20',' ')) AS $varName
+INLINE [
+  https://raw.githubusercontent.com/ChristofSchwarz/htc/main/00_Subs.qvs | 00_Subs.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/01_Main.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/02_Variables.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/03_Preload%20Data.qvs
@@ -23,11 +26,12 @@ $URLs: LOAD * INLINE [
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/08_Betriebe.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/09_Kalender.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/99_Exit.qvs
-] (no labels, delimiter is '\n') WHERE NOT @1 LIKE '//*';
+] (no labels, delimiter is '|') WHERE NOT @1 LIKE '//*';
 
+// Keep next block ...
 FOR vUrlIdx = 1 TO NoOfRows('$URLs')
-  LET vUrl = Peek('@1', vUrlIdx-1, '$URLs');
-  LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
+  LET vUrl = Peek('$url', vUrlIdx-1, '$URLs');
+  LET vVarName = Peek('$varName', vUrlIdx-1, '$URLs');
   SCRIPT: LOAD Concat(col_1, CHR(10), RecNo()) AS script;
   SQL SELECT "col_1" FROM CSV (header off, delimiter "\n", quote "\n") "CSV_source"
   WITH CONNECTION (URL "$(vUrl)", HTTPHEADER "Cache-Control" "no-cache");
@@ -39,7 +43,8 @@ FOR vUrlIdx = 1 TO NoOfRows('$URLs')
   TRACE; TRACE Created $(vVarLen) kB of Script in variable <<$(vVarName)>>;
   DROP TABLE SCRIPT;
 NEXT vUrlIdx;
-//DROP TABLE $URLs;
+//DROP TABLE $URLs;  // Leave table alive, we need it until Cleanup SUB called in 99_Exit.qvs
+
 $(00_Subs.qvs);
 $(01_Main.qvs);
 $(02_Variables.qvs);
@@ -51,6 +56,7 @@ $(07_Datenart.qvs);
 $(08_Betriebe.qvs); 
 $(09_Kalender.qvs);                 
 $(99_Exit.qvs);
+
 ```
 The script raw lines are read in the FOR loop using any REST GET connection without authentication, 
 then the lines are concatenated into a Line-Break separated string and put into a variable that
