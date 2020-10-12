@@ -1,4 +1,4 @@
-TRACE ------------------------------------ 21:47;
+TRACE ------------------------------------;
 TRACE Including 04_ExcelStruktur.qvs;
 
 Berichte: LOAD * INLINE [Bericht, %BerichtZeile];
@@ -16,7 +16,7 @@ WHERE
     Import = 1;
 
 
-FOR v = 1 TO 10//NoOfRows('LoadList') //EACH vFileName IN 'KER.xls', 'Bilanz.xls', 'KER_kein_Hotel.xls'
+FOR v = 1 TO NoOfRows('LoadList') //EACH vFileName IN 'KER.xls', 'Bilanz.xls', 'KER_kein_Hotel.xls'
 
     LET vFileName = Peek('FileName', v-1, 'LoadList');
     LET vReportName = Peek('ReportName', v-1, 'LoadList');
