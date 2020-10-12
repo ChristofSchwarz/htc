@@ -20,7 +20,7 @@ SUB Cleanup
       LET vUrl = Peek('@1', vUrlIdx-1, '$URLs');
       LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
       IF Len('$(vVarName)') THEN 
-      	[$(vVarName)] = Null();
+      	[$(vVarName)] = Null();  // clear the variable content if it exists
       ENDIF
     NEXT vUrlIdx;
     DROP TABLE $URLs;
