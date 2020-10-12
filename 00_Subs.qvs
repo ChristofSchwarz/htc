@@ -15,7 +15,7 @@ SUB Cleanup
         ENDIF    
     NEXT vTable      
     
-    IF Len(TableIndex('$URL')) THEN
+    IF IsNum(TableNumber('$URLs')) THEN
       // Delete script-containing variables
       FOR vUrlIdx = 1 TO NoOfRows('$URLs')
         LET vUrl = Peek('@1', vUrlIdx-1, '$URLs');
