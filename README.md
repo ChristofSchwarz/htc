@@ -32,16 +32,16 @@ INLINE [
 FOR vUrlIdx = 1 TO NoOfRows('$URLs')
   LET vUrl = Peek('$url', vUrlIdx-1, '$URLs');
   LET vVarName = Peek('$varName', vUrlIdx-1, '$URLs');
-  SCRIPT: LOAD Concat(col_1, CHR(10), RecNo()) AS script;
+  $ScriptRows: LOAD Concat(col_1, CHR(10), RecNo()) AS $script;
   SQL SELECT "col_1" FROM CSV (header off, delimiter "\n", quote "\n") "CSV_source"
   WITH CONNECTION (URL "$(vUrl)", HTTPHEADER "Cache-Control" "no-cache");
-  LET [$(vVarName)] = Peek('script', -1, 'SCRIPT');
+  LET [$(vVarName)] = Peek('$script', -1, '$ScriptRows');
   LET vVarLen = Num(Len([$(vVarName)])/1024,'# ##0.00','.',' ');
   IF vVarLen = 0 THEN
   	[Script not found at $(vUrl)];  // Throw error
   ENDIF
   TRACE; TRACE Created $(vVarLen) kB of Script in variable <<$(vVarName)>>;
-  DROP TABLE SCRIPT;
+  DROP TABLE $ScriptRows;
 NEXT vUrlIdx;
 //DROP TABLE $URLs;  // Leave table alive, we need it until Cleanup SUB called in 99_Exit.qvs
 
