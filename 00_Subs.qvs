@@ -25,3 +25,7 @@ SUB Cleanup
     NEXT vUrlIdx;
     DROP TABLE $URLs;
 END Sub
+
+TRACE ---------------------------------------;
+TRACE end of 00_Subs.qvs;
+
