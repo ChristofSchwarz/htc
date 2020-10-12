@@ -52,16 +52,3 @@ FOR v = 1 TO NoOfRows('_TableSettings')
 NEXT v
 
 
-
-SUB Cleanup
-	TRACE [Prozedur "Cleanup" ...];
-    FOR v = 1 TO FieldValueCount('_TableList')
-    	LET vTable = FieldValue('_TableList',v);
-    	DROP TABLE [$(vTable)];
-    NEXT v
-    FOR EACH vTable IN '_TableSettings', 'SE_Filters', 'Save Field ReportName~', 'SE_ID_mit_Wert', $(vSingleValueFields)
-    	IF IsNum(TableNumber(vTable)) THEN
-    		DROP TABLE [$(vTable)];
-        ENDIF    
-    NEXT vTable      
-END Sub
