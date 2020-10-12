@@ -18,11 +18,8 @@ SUB Cleanup
     IF IsNum(TableNumber('$URLs')) THEN
       // Delete script-containing variables
       FOR vUrlIdx = 1 TO NoOfRows('$URLs')
-        LET vUrl = Peek('@1', vUrlIdx-1, '$URLs');
-        LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
-        IF Len('$(vVarName)') THEN 
-  	[$(vVarName)] = Null();  // clear the variable content if it exists
-        ENDIF
+        LET vVarName = Peek('$varName', vUrlIdx-1, '$URLs');
+        WHEN Len('$(vVarName)') [$(vVarName)] = Null();  // clear the variable content if it exists
       NEXT vUrlIdx;
       DROP TABLE $URLs;
     ENDIF
