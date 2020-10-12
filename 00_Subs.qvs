@@ -1,3 +1,5 @@
+TRACE ---------------------------------------;
+TRACE including 00_Subs.qvs;
 
 SUB Cleanup
 	TRACE [Prozedur "Cleanup" ...];
@@ -19,5 +21,5 @@ SUB Cleanup
       LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
       WHEN Len([$(vVarName)]) [$(vVarName)] = Null();
     NEXT vUrlIdx;
-    
+    DROP TABLE $URLs;
 END Sub
