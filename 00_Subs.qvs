@@ -1,0 +1,23 @@
+
+SUB Cleanup
+	TRACE [Prozedur "Cleanup" ...];
+    FOR v = 1 TO FieldValueCount('_TableList')
+    	LET vTable = FieldValue('_TableList',v);
+    	DROP TABLE [$(vTable)];
+    NEXT v
+    
+    // Delete placeholder tables 
+    FOR EACH vTable IN '_TableSettings', 'SE_Filters', 'Save Field ReportName~', 'SE_ID_mit_Wert', $(vSingleValueFields)
+    	IF IsNum(TableNumber(vTable)) THEN
+    		DROP TABLE [$(vTable)];
+        ENDIF    
+    NEXT vTable      
+    
+    // Delete script-containing variables
+    FOR vUrlIdx = 1 TO NoOfRows('$URLs')
+      LET vUrl = Peek('@1', vUrlIdx-1, '$URLs');
+      LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
+      WHEN Len([$(vVarName)]) [$(vVarName)] = Null();
+    NEXT vUrlIdx;
+    
+END Sub
