@@ -11,8 +11,8 @@ To include this Qlik Script files (*.qvf) from Qlik cloud, use the REST Connecto
 ```
 LIB CONNECT TO 'Igel:REST_GET';
 
-// Code ausgelagert auf https://github.com/ChristofSchwarz/htc
 $URLs: LOAD * INLINE [
+  https://raw.githubusercontent.com/ChristofSchwarz/htc/main/00_Subs.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/01_Main.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/02_Variables.qvs
   https://raw.githubusercontent.com/ChristofSchwarz/htc/main/03_Preload%20Data.qvs
@@ -29,13 +29,17 @@ FOR vUrlIdx = 1 TO NoOfRows('$URLs')
   LET vUrl = Peek('@1', vUrlIdx-1, '$URLs');
   LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
   SCRIPT: LOAD Concat(col_1, CHR(10), RecNo()) AS script;
-  SQL SELECT "col_1" FROM CSV (header off, delimiter "\n", quote """") "CSV_source"
+  SQL SELECT "col_1" FROM CSV (header off, delimiter "\n", quote "\n") "CSV_source"
   WITH CONNECTION (URL "$(vUrl)");
   LET [$(vVarName)] = Peek('script', -1, 'SCRIPT');
-  TRACE; TRACE Created Script in variable <<$(vVarName)>>;
+  LET vVarLen = Num(Len([$(vVarName)])/1024,'# ##0.00','.',' ');
+  IF vVarLen = 0 THEN
+  	[Script not found at $(vUrl)];  // Throw error
+  ENDIF
+  TRACE; TRACE Created $(vVarLen) kB of Script in variable <<$(vVarName)>>;
   DROP TABLE SCRIPT;
 NEXT vUrlIdx;
-DROP TABLE $URLs;
+//DROP TABLE $URLs;
 
 $(01_Main.qvs);
 $(02_Variables.qvs);
