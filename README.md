@@ -30,7 +30,7 @@ FOR vUrlIdx = 1 TO NoOfRows('$URLs')
   LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
   SCRIPT: LOAD Concat(col_1, CHR(10), RecNo()) AS script;
   SQL SELECT "col_1" FROM CSV (header off, delimiter "\n", quote "\n") "CSV_source"
-  WITH CONNECTION (URL "$(vUrl)");
+  WITH CONNECTION (URL "$(vUrl)", HTTPHEADER "Cache-Control" "no-cache");
   LET [$(vVarName)] = Peek('script', -1, 'SCRIPT');
   LET vVarLen = Num(Len([$(vVarName)])/1024,'# ##0.00','.',' ');
   IF vVarLen = 0 THEN
