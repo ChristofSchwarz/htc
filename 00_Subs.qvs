@@ -19,7 +19,9 @@ SUB Cleanup
     FOR vUrlIdx = 1 TO NoOfRows('$URLs')
       LET vUrl = Peek('@1', vUrlIdx-1, '$URLs');
       LET vVarName = Replace(SubField(vUrl, '/', -1),'%20',' ');
-      WHEN Len([$(vVarName)]) [$(vVarName)] = Null();
+      IF Len('$(vVarName']) THEN 
+      	[$(vVarName)] = Null();
+      ENDIF
     NEXT vUrlIdx;
     DROP TABLE $URLs;
 END Sub
