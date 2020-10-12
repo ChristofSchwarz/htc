@@ -1,0 +1,31 @@
+TRACE Including 09_Kalender.qvs;
+
+GJ_Beginn_Lookup:
+MAPPING LOAD %Betrieb_ID, gj_beginn RESIDENT Betriebe;
+
+Kalender:
+LOAD DISTINCT
+    %BetriebZeit,
+    Text(If(Len(Zeit_ID)=6,
+      If(GJ_Beginn=1,
+          Left(Zeit_ID,4),
+          If(Num#(Right(Zeit_ID,2)) >= GJ_Beginn,
+              Left(Zeit_ID,4) & '/' & (Num#(Left(Zeit_ID,4))+1),
+              (Num#(Left(Zeit_ID,4))-1) & '/' & Left(Zeit_ID,4)
+          )
+      ),
+      If(GJ_Beginn=1, 
+      	Zeit_ID,
+     	Zeit_ID & '/' & (Zeit_ID+1)   
+      )
+    )) AS Jahr;
+LOAD DISTINCT
+	%BetriebZeit, 
+    Zeit_ID, 
+    ApplyMap('GJ_Beginn_Lookup', Betrieb_ID, '?') AS GJ_Beginn
+RESIDENT 
+	BerichtZeilen
+WHERE
+	Len(Zeit_ID) >= 4;
+    
+    

@@ -1,0 +1,66 @@
+TRACE Including 03_Preload Data.qvs;
+
+// Hier geben wir an, welche Tabellen wir brauchen.
+// Diese werden vorab in den Speicher geladen und mit RESIDENT im Skript
+// zu den finalen Tabellen verarbeitet. Zuletzt werden mit der Sub Cleanup
+// diese temporären wieder gelöscht. Damit kann das gleiche Skript bei
+// Martin wie bei Christof laufen, nur das erste Skript-Blatt ist anders.
+
+_TableSettings:
+LOAD * INLINE [
+	_TableList, _Where
+	icDB_Beschreibung
+    icDB_AusgabeTyp
+    icDB_Wert
+    icDB_Stammbaum
+    icDB_Betrieb
+    icDB_Betriebsmodelle
+];
+
+
+FOR v = 1 TO NoOfRows('_TableSettings')
+    LET vTable = Peek('_TableList', v-1, '_TableSettings');
+    LET vWhere = Peek('_Where', v-1, '_TableSettings');
+    WHEN Len(vWhere) LET vWhere = ' WHERE ' & vWhere;
+        
+   	IF ComputerName() = 'QS1' THEN
+        WHEN v = 1 TRACE Bei Christof ...;    
+            
+        LET vQVD_Source = 'lib://Dropbox - martin.troestl@htc-tourismusconsulting.com (qs1_vagrant)/qlikdata';
+        //LET vQVD_Source = 'lib://vagrant_data (qs1_vagrant)';
+        LET vExcelLocation = 'lib://Dropbox - martin.troestl@htc-tourismusconsulting.com (qs1_vagrant)/qlikdata/Excel';
+		[$(vTable)]: 
+        LOAD * FROM [$(vQVD_Source)/$(vTable).qvd] (qvd) $(vWhere);
+	ELSEIF ComputerName() LIKE 'TROESTL*' THEN
+        WHEN v = 1 TRACE Bei Martin ...;
+        LET vQVD_Source = 'lib://C_Dropbox/qlikdata';
+        LET vExcelLocation = 'lib://C_Dropbox/qlikdata/Excel';
+        LIB CONNECT TO 'SQL Server';
+        [$(vTable)]: 
+        SELECT * FROM "$(vTable)" $(vWhere);
+        DISCONNECT;
+        STORE [$(vTable)] INTO [$(vQVD_Source)/$(vTable).qvd] (qvd);
+    ELSE
+    	WHEN v=1 TRACE In QlikCloud ...;
+        LET vQVD_Source = 'lib://Igel:Dropbox - martin.troestl@htc-tourismusconsulting.com/qlikdata';
+        //LET vQVD_Source = 'lib://vagrant_data (qs1_vagrant)';
+        LET vExcelLocation = 'lib://Igel:Dropbox - martin.troestl@htc-tourismusconsulting.com/qlikdata/Excel';
+		[$(vTable)]: 
+        LOAD * FROM [$(vQVD_Source)/$(vTable).qvd] (qvd) $(vWhere);
+    END IF            
+NEXT v
+
+
+
+SUB Cleanup
+	TRACE [Prozedur "Cleanup" ...];
+    FOR v = 1 TO FieldValueCount('_TableList')
+    	LET vTable = FieldValue('_TableList',v);
+    	DROP TABLE [$(vTable)];
+    NEXT v
+    FOR EACH vTable IN '_TableSettings', 'SE_Filters', 'Save Field ReportName~', 'SE_ID_mit_Wert', $(vSingleValueFields)
+    	IF IsNum(TableNumber(vTable)) THEN
+    		DROP TABLE [$(vTable)];
+        ENDIF    
+    NEXT vTable      
+END Sub

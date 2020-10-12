@@ -1,0 +1,31 @@
+TRACE Including 07_Datenart.qvs;
+
+DatenartLink:
+LOAD DISTINCT 
+	Datenart,
+    Datenart AS Datenart.Spalte,
+    Datenart AS Datenarten,
+    1 AS Datenart.SortId,
+    1 AS Datenart.PlusMinus
+RESIDENT 
+	BerichtZeilen
+WHERE
+	Len(Trim(Datenart));
+    
+CONCATENATE (DatenartLink)
+LOAD *, RecNo() AS Datenart.SortId INLINE [
+	Datenart, Datenart.Spalte, Datenarten, Datenart.PlusMinus, Datenart.Farbe
+	IST, IST, IST vs BUD, 1, #184a45 
+    BUD, BUD, IST vs BUD, 1, #b0b8b4 
+    IST, Diff, IST vs BUD, 1, #fc766a 
+    BUD, Diff, IST vs BUD, -1, #fc766a 
+    IST, IST, IST vs BU2, 1, #184a45 
+    BU2, BU2, IST vs BU2, 1, #b0b8b4 
+    IST, Diff, IST vs BU2, 1, #fc766a 
+    BU2, Diff, IST vs BU2, -1, #fc766a 
+    IST, IST, IST vs BU3, 1, #184a45 
+    BU3, BU3, IST vs BU3, 1, #b0b8b4 
+    IST, Diff, IST vs BU3, 1, #fc766a 
+    BU3, Diff, IST vs BU3, -1, #fc766a 
+] WHERE NOT Datenart LIKE '//*';
+

@@ -1,0 +1,15 @@
+TRACE Including 08_Betriebe.qvs;
+
+Betriebe:
+LOAD
+    Betrieb_ID AS %Betrieb_ID,
+    Name AS Betrieb,
+    Währung,
+    gj_beginn,
+    betriebstyp,
+    rechtsform,
+    model
+RESIDENT
+	icDB_Betrieb;
+
+

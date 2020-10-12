@@ -1,0 +1,28 @@
+TRACE Including 06_Join Werte.qvs;
+
+LEFT JOIN (BerichtZeilen)
+LOAD
+    // Join on
+    SE_ID,
+    Typ,
+    // Add fields
+    Zeit_ID,
+    Betrieb_ID,
+    Betrieb_ID AS %Betrieb_ID,
+    Betrieb_ID & ';' & Zeit_ID AS %BetriebZeit,
+    Datenart,
+    WertNumeric * 1 AS Wert,
+    WertText,
+    Aktiv,
+    Eingabe
+RESIDENT 
+	icDB_Wert;
+    
+    
+LEFT JOIN (BerichtZeilen)
+LOAD
+    AusgabeTyp_ID AS Typ,
+    Dual(Beschreibung & ' [' & AusgabeTyp_ID & ']', AusgabeTyp_ID) AS TypBez 
+RESIDENT
+	icDB_AusgabeTyp;
+

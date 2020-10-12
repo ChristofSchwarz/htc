@@ -1,0 +1,110 @@
+TRACE Including 04_ExcelStruktur.qvs;
+
+Berichte: LOAD * INLINE [Bericht, %BerichtZeile];
+BerichtZeilen: LOAD * INLINE [%BerichtZeile, %BerichtZeilen];
+
+LoadList:
+LOAD
+    FileName,
+    SheetName,
+    If(Len(QlikReportName), QlikReportName, SheetName) AS ReportName
+FROM 
+    [lib://Igel:Dropbox - martin.troestl@htc-tourismusconsulting.com/qlikdata/Excel/_ImportListe.xlsx]
+    (ooxml, embedded labels, table is Qlik)
+WHERE 
+    Import = 1;
+
+
+FOR v = 1 TO NoOfRows('LoadList') //EACH vFileName IN 'KER.xls', 'Bilanz.xls', 'KER_kein_Hotel.xls'
+
+    LET vFileName = Peek('FileName', v-1, 'LoadList');
+    LET vReportName = Peek('ReportName', v-1, 'LoadList');
+    LET vSheetName = Peek('SheetName', v-1, 'LoadList');
+
+
+	TRACE [Arbeite an $(vFileName) / $(vSheetName)];
+
+    CONCATENATE (Berichte)
+    LOAD
+        *,
+        Formula LIKE '=*GetICval(*)' AS IsGetICval,
+        Formula LIKE '=*' AND Len(PurgeChar(Formula,'=EF+-0123456789')) = 0 AS IsExcelSum
+    ;
+    LOAD
+        '$(vReportName)' AS Bericht,
+        '$(vReportName);' & Zeile AS %BerichtZeile,
+        Level,
+        Zeile,
+        L1,
+        L2,
+        L3,
+        L4,
+        FormulaNew AS Formula
+    FROM 
+        [$(vExcelLocation)/$(vFileName)]
+        (biff, embedded labels, table is [$(vSheetName)$])
+    WHERE
+        Len(Trim(Level));
+	
+
+    BerichtZeilen_tmp:
+    LOAD 
+        %BerichtZeile,
+        %BerichtZeile AS %BerichtZeilen,
+        1 AS Factor
+    RESIDENT    
+        Berichte
+    WHERE 
+        IsGetICval
+        AND '$(vFileName)' LIKE (Bericht & '.*');
+
+
+    ExplodePlus: // explode + 
+    NOCONCATENATE LOAD 
+        %BerichtZeile,
+        Bericht,
+        '+' & SubField(KeepChar(Formula,'+-0123456789'),'+') AS Plus
+    RESIDENT
+        Berichte
+    WHERE
+        IsExcelSum
+        AND '$(vFileName)' LIKE (Bericht & '.*');
+
+    ExplodePlusAndMinus: // explode -
+    NOCONCATENATE LOAD
+        %BerichtZeile, 
+        Bericht,
+        '-' & SubField(Plus, '-') AS Zeilen 
+    RESIDENT ExplodePlus;
+
+    DROP TABLE ExplodePlus;
+
+    CONCATENATE (BerichtZeilen_tmp)
+    LOAD 
+       %BerichtZeile,  
+       If(WildMatch(Zeilen, '-+*'), 1, -1) AS Factor,
+       Bericht & ';' & PurgeChar(Zeilen,'-+') AS %BerichtZeilen
+    RESIDENT
+        ExplodePlusAndMinus
+    WHERE
+        Len(PurgeChar(Zeilen,'+-'));
+
+    DROP TABLE ExplodePlusAndMinus;
+
+    LEFT JOIN (BerichtZeilen_tmp)
+    LOAD 
+        %BerichtZeile AS %BerichtZeilen,
+        SubField(TextBetween(Replace(Formula,';',','), 'GetICval(', ')'), ',', 2) AS SE_ID,
+        SubField(TextBetween(Replace(Formula,';',','), 'GetICval(', ')'), ',', 3) AS Typ
+    RESIDENT    
+        Berichte
+    WHERE 
+        IsGetICval
+        AND '$(vFileName)' LIKE (Bericht & '.*');
+
+    CONCATENATE (BerichtZeilen)
+    LOAD * RESIDENT BerichtZeilen_tmp;
+    DROP TABLE BerichtZeilen_tmp;
+
+NEXT v;
+TRACE [Fertig mit Excel Import];

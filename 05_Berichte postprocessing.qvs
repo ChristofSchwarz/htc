@@ -1,0 +1,92 @@
+TRACE 05_Berichte postprocessing.qvs;
+
+// Explode Berichte (kartesiches Produkt mit allen Betrieb_ID)
+LEFT JOIN (Berichte)
+LOAD 
+	DISTINCT Betrieb_ID
+RESIDENT
+	icDB_Betrieb;
+
+
+LookupSpecialBez:
+MAPPING LOAD DISTINCT
+	Betrieb_ID & ';' & SE_ID, WertText
+RESIDENT icDB_Wert
+WHERE Typ = 137;
+
+LookupDefaultBez:
+MAPPING LOAD DISTINCT
+	SE_ID, Beschreibung
+RESIDENT icDB_Beschreibung;
+
+
+Berichte2:
+NOCONCATENATE
+LOAD
+	L1 AS L1__,
+    L1 & L2 AS L2__,
+    L1 & L2 & L3 AS L3__,
+    L1 & L2 & L3 & L4 AS L4__,
+    *;
+LOAD
+	*,
+	If(L1_ LIKE '*GetICval(*,137,*', 
+    	ApplyMap('LookupSpecialBez', Betrieb_ID & ';' & SubField(SubField(L1_, 'GetICval(', 2),',', 2), 
+            ApplyMap('LookupDefaultBez', SubField(SubField(L1_,'GetICval(', 2),',', 2), 
+        	Betrieb_ID & ';' & SubField(SubField(L1_,'GetICval(', 2),',', 2) & '?')),
+        L1_) AS L1,
+    If(L2_ LIKE '*GetICval(*,137,*', 
+    	ApplyMap('LookupSpecialBez', Betrieb_ID & ';' & SubField(SubField(L2_,'GetICval(', 2),',', 2), 
+        	ApplyMap('LookupDefaultBez', SubField(SubField(L2_,'GetICval(', 2),',', 2), 
+        	Betrieb_ID & ';' & SubField(SubField(L2_,'GetICval(', 2),',', 2) & '?')),
+        L2_) AS L2,
+	If(L3_ LIKE '*GetICval(*,137,*', 
+    	ApplyMap('LookupSpecialBez', Betrieb_ID & ';' & SubField(SubField(L3_,'GetICval(', 2),',', 2),
+        	ApplyMap('LookupDefaultBez', SubField(SubField(L3_,'GetICval(', 2),',', 2), 
+        	Betrieb_ID & ';' & SubField(SubField(L3_,'GetICval(', 2),',', 2) & '?')),
+        L3_) AS L3,
+	If(L4_ LIKE '*GetICval(*,137,*',
+    	ApplyMap('LookupSpecialBez', Betrieb_ID & ';' & SubField(SubField(L4_,'GetICval(', 2),',', 2), 
+        	ApplyMap('LookupDefaultBez', SubField(SubField(L4_,'GetICval(', 2),',', 2), 
+        	Betrieb_ID & ';' & SubField(SubField(L4_,'GetICval(', 2),',', 2) & '?')),
+        L4_) AS L4  
+;
+LOAD 
+	Betrieb_ID,
+    %BerichtZeile,
+    Bericht,
+    Zeile,
+    //Import,
+    Level,
+    Formula,
+    IsGetICval,
+    IsExcelSum,
+    Replace(L1, ';', ',') AS L1_,
+    Replace(L2, ';', ',') AS L2_,
+    Replace(L3, ';', ',') AS L3_,
+    Replace(L4, ';', ',') AS L4_    
+RESIDENT 
+	Berichte;
+
+Berichte3:
+NOCONCATENATE LOAD
+	*,
+	(FieldIndex('L1__', L1__) * 100 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID)) AS Id1,
+    (FieldIndex('L2__', L2__) * 100 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID)) AS Id2,
+    (FieldIndex('L3__', L3__) * 100 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID)) AS Id3,
+    (FieldIndex('L4__', L4__) * 100 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID)) AS Id4     
+RESIDENT
+	Berichte2;
+    
+DROP TABLES Berichte, Berichte2;    
+RENAME TABLE Berichte3 TO Berichte;
+DROP FIELDS L1__, L2__, L3__, L4__;
+    
+L1Dual: 
+LOAD DISTINCT Dual(L1,Id1) AS L^1, Id1 RESIDENT Berichte WHERE Len(L1);    
+L2Dual: 
+LOAD DISTINCT Dual(L2,Id2) AS L^2, Id2 RESIDENT Berichte WHERE Len(L2);
+L3Dual: 
+LOAD DISTINCT Dual(L3,Id3) AS L^3, Id3 RESIDENT Berichte WHERE Len(L3);
+L4Dual: 
+LOAD DISTINCT Dual(L4,Id4) AS L^4, Id4 RESIDENT Berichte WHERE Len(L4);
