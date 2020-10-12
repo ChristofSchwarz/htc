@@ -1,4 +1,4 @@
-TRACE ---------------------------------------;
+TRACE ------------------------------------ 21:47;
 TRACE Including 04_ExcelStruktur.qvs;
 
 Berichte: LOAD * INLINE [Bericht, %BerichtZeile];
@@ -57,7 +57,7 @@ FOR v = 1 TO 10//NoOfRows('LoadList') //EACH vFileName IN 'KER.xls', 'Bilanz.xls
         Berichte
     WHERE 
         IsGetICval
-        AND '$(vFileName)' LIKE (Bericht & '.*');
+        AND '$(vReportName)' = Bericht;
 
 
     ExplodePlus: // explode + 
@@ -69,7 +69,7 @@ FOR v = 1 TO 10//NoOfRows('LoadList') //EACH vFileName IN 'KER.xls', 'Bilanz.xls
         Berichte
     WHERE
         IsExcelSum
-        AND '$(vFileName)' LIKE (Bericht & '.*');
+        AND '$(vReportName)' = Bericht;
 
     ExplodePlusAndMinus: // explode -
     NOCONCATENATE LOAD
