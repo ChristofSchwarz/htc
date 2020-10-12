@@ -43,7 +43,7 @@ FOR vUrlIdx = 1 TO NoOfRows('$URLs')
   TRACE; TRACE Created $(vVarLen) kB of Script in variable <<$(vVarName)>>;
   DROP TABLE $ScriptRows;
 NEXT vUrlIdx;
-//DROP TABLE $URLs;  // Leave table alive, we need it until Cleanup SUB called in 99_Exit.qvs
+DROP TABLE $URLs;  
 
 $(00_Subs.qvs);
 $(01_Main.qvs);
