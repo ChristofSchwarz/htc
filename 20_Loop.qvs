@@ -1,0 +1,139 @@
+TRACE ---------------------------------------;
+TRACE including 20_Loop.qvs / Version 1.06;
+// Version Changes
+// 1.02 Lade nur die Daten, die zum Titel der App passen, in der das Script läuft
+// 1.04, 03-Feb-2021, Filter beim Laden von _VerzeichnisIndex mit nur Zeilen wo BetriebNr gleich ist
+// 1.05, 20-Apr-2022, Fehler werfen, wenn ein Excel Sheet keine einzige Zeile importiert.
+// 1.06, 07-Jul-2022, Mehrere Betriebe können geladen werden (Konsolidierung)
+
+LET vBetriebNrGesucht = TextBetween(DocumentTitle(), '[', ']');
+IF Len(vBetriebNrGesucht) = 0 THEN
+    [Error: Im App-Titel ist keine Betriebsnr in eckiger Klammer enthalten!];
+END IF
+
+// Lies das Index File ein ...
+
+ImportFiles:
+LOAD
+    Dateiname AS ExcelFile,
+    //Alt(Geschäftsjahresbeginn, 1) AS GJ_Beginn,
+    [Konten-Mapping],
+    KundenKontenblätter,
+    BetriebNr
+FROM 
+    [$(vBaseFolder)/_Verzeichnis-Index.xlsm]
+    (ooxml, embedded labels, table is Qlik)
+WHERE
+    [Import 0/1] = 1
+    AND Match(BetriebNr, $(vBetriebNrGesucht));
+    // AND BetriebNr = '$(vBetriebNrGesucht)';
+
+IF NoOfRows('ImportFiles') = 0 THEN
+    [Fehler: Zum Kunden $(vBetriebNrGesucht) gibt es keine Zeilen in _Verzeichnis-Index.xlsm];
+END IF
+
+BerichtZeilen0: // Start empty table
+LOAD * INLINE [SourceFile, Betrieb_ID, Betrieb, Bericht, ExcelRow];
+
+// KdeKtoMapping:
+// LOAD * INLINE [%KdeKtoNr];
+LET vFilesGeladen = 0;
+LET vMappingFile = '';
+LET vNaturelHotelImported = 0;
+
+FOR vImp = 1 TO NoOfRows('ImportFiles')
+
+    LET vFile = Peek('ExcelFile', vImp - 1, 'ImportFiles');
+    LET vFile = vFile & If(NOT vFile LIKE '*.xlsx', '.xlsx');  // add file extension if not in the file
+    
+    //LET vGJBeginn = Peek('GJ_Beginn', vImp - 1, 'ImportFiles');
+    LET vMappingFile = IF(Len(Peek('Konten-Mapping', vImp - 1, 'ImportFiles')), 
+        Peek('Konten-Mapping', vImp - 1, 'ImportFiles'), vMappingFile);
+    LET vKtnBlätter = Peek('KundenKontenblätter', vImp - 1, 'ImportFiles');
+    
+	//TRACE Lade Datei "$(vFile)" aus "$(vBaseFolder)";
+    
+    Meta:
+    LOAD
+        If(Len(BetriebNr), BetriebNr) AS BetriebNr,
+        If(Len(BetriebName), BetriebName) AS BetriebName,
+        [Import (0/1)],
+        SheetList,
+        Mod([Letztes Monat des GJ], 12) + 1 AS GJ_Beginn
+    FROM 
+    	[$(vBaseFolder)/$(vFile)]
+        (ooxml, embedded labels, table is Qlik)
+    WHERE 
+        Len(Trim(SheetList));
+
+    LET vBetriebNr = Peek('BetriebNr', 0, 'Meta');
+    LET vBetriebName = Peek('BetriebName', 0, 'Meta');
+    TRACE vBetriebNr = $(vBetriebNr), vBetriebName = $(vBetriebName);
+
+    IF WildMatch(vBetriebNr, $(vBetriebNrGesucht)) THEN
+        TRACE Lade BetriebName: $(vBetriebName), Nr $(vBetriebNr), Datei "$(vFile)" aus "$(vBaseFolder)";
+        LET vGJBeginn = Peek('GJ_Beginn', 0, 'Meta');
+
+        FOR vRowNo = 1 TO NoOfRows('Meta');
+            LET vBericht = Peek('SheetList', vRowNo -1, 'Meta');
+            IF Peek('Import (0/1)', vRowNo - 1, 'Meta') = 1 THEN
+                TRACE Lade Excel Sheet "$(vBericht)" für Betrieb $(vBetriebNr) ($(vBetriebName)) aus "$(vFile)";
+                TRACE (Geschäftsjahresbeginn ist Monat $(vGJBeginn));
+                LET vBerichtZeilen0 = NoOfRows('BerichtZeilen0');
+                CALL ImportData ('BerichtZeilen0', '$(vBaseFolder)/$(vFile)', vBericht, vBetriebNr, vBetriebName, vGJBeginn);
+                LET vBerichtZeilen1 = NoOfRows('BerichtZeilen0');
+                IF vBerichtZeilen0 = vBerichtZeilen1 THEN
+                    TRACE [WARNUNG: File $(vFile) Sheet "$(vBericht)" hat keine einzige Zeile geliefert.];
+                END IF
+                LET vFilesGeladen = vFilesGeladen + 1;
+            ENDIF
+        NEXT vRowNo
+
+        // spezieller Import für Schönleiten Gruppe
+        IF WildMatch(vBetriebNrGesucht, '*613*', '*614*', '*615*') THEN 
+
+            IF vNaturelHotelImported = 0 THEN
+
+                // SET vImportSchönleitenKz = [$(vBaseFolder)/Naturel Hotels & Resorts/Saldenlisten/KennzahlenExport.qvd];
+                SET vImportSchönleitenKz = [lib://Naturel Hotels:DataFiles/KennzahlenExport.qvd];
+
+                // vBetriebNrGesucht
+                IF NOT Alt(FileTime(vImportSchönleitenKz), -1) = -1 THEN
+
+                    TRACE [<<< Spezialimport von KennzahlenExport.qvd für Schönleiten Betrieb(e) $(vBetriebNrGesucht) >>>];
+                    CONCATENATE (BerichtZeilen0)
+                    LOAD 
+                        *
+                        ,1 AS isNaturelHotelFact
+                    FROM 
+                        [$(vImportSchönleitenKz)] (qvd)
+                    WHERE
+                        SubStringCount('$(vBetriebNrGesucht)', Betrieb_ID);
+
+                    LET vNaturelHotelImported = vNaturelHotelImported & ',' & CHR(39) & vBetriebNrGesucht & CHR(39);
+
+                END IF
+                LET vImportSchönleitenKz = Null();
+                LET vNaturelHotelImported = 1;
+
+            ELSE
+                TRACE [<<< Spezialimport von KennzahlenExport.qvd für Schönleiten hat schon in vorigem Loop stattgefunden >>>];
+                
+            END IF
+
+        END IF
+
+    ELSE
+        TRACE Überspringe BetriebName: $(vBetriebName), Nr $(vBetriebNr), Datei "$(vFile)" aus "$(vBaseFolder)";
+    END IF
+
+    DROP TABLE Meta; 
+    
+NEXT vImp;
+
+
+IF vFilesGeladen = 0 THEN
+    [Error: Keines der Importfiles passt zu dieser App. Die Nr im Titel muss mit der Kundennummer im Excel File übereinstimmen.];
+END IF
+DROP TABLE ImportFiles;
+

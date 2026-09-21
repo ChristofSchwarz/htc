@@ -1,0 +1,137 @@
+TRACE ---------------------------------------;
+TRACE Including 60_Preissteigerung.qvs / Version 1.0;
+
+// Preissteigerung geht nur wenn in der App schon einen hard-codierte
+// Inline-Table [~PStg_Definitionen] definiert wurde.
+
+LET vDatenart2 = vDatenart;
+LET vVJ = -1;
+// kommt aus Excel Sheet "Formeln"
+SET vKennz_generic = Sum({1<Betrieb=P(Betrieb),Bericht={"$1"},Level={"1"},L^1={"$2"},Datenart={"$3"},Vorjahr={"$4"},JahrMonat=P(JahrMonat)>} Wert);
+
+SET vPreissteigerungCalc = Pick(FieldIndex('Preissteigerung',Preissteigerung), 
+    $°(=Concat({1} PStg_Formel_Vgl$°(vPStg_Vgl), ',', PStg_SortNo))); 
+LET vPreissteigerungCalc = PurgeChar(vPreissteigerungCalc, '°');
+
+PStg_Definitionen:
+LOAD
+    *
+    ,RecNo() AS PStg_SortNo    
+	, // Die Formel PStg_Formel_Vgl2 wird aus 6 einzelnen Feldern (unterer Load-Block) zusammengeführt
+'(
+    (
+        ' & PStg_Formel_a_Vgl1 & '
+        / 
+        ' & PStg_Formel_b_Vgl1 & '
+    )
+    /
+    (
+        ' & PStg_Formel_c_Vgl1 & '
+        / 
+        ' & PStg_Formel_d_Vgl1 & '
+    )
+    -1 
+)
+*
+(
+    ' & PStg_Formel_e_Vgl1 & ' 
+    /
+    ' & PStg_Formel_f_Vgl1 & '
+)' 
+	AS PStg_Formel_Vgl1 // IST AJ vs IST VJ
+    , // Die Formel PStg_Formel_Vgl2 wird aus 6 einzelnen Feldern (unterer Load-Block) zusammengeführt
+'(
+    (
+        ' & PStg_Formel_a_Vgl2 & '
+        / 
+        ' & PStg_Formel_b_Vgl2 & '
+    )
+    /
+    (
+        ' & PStg_Formel_c_Vgl2 & '
+        / 
+        ' & PStg_Formel_d_Vgl2 & '
+    )
+    -1 
+)
+*
+(
+    ' & PStg_Formel_e_Vgl2 & ' 
+    /
+    ' & PStg_Formel_f_Vgl2 & '
+)' 
+	AS PStg_Formel_Vgl2 // PLAN AJ vs IST VJ
+;
+LOAD 
+	* 
+    // Komponenten des Doppelbruches ((a/b) / (d/e) -1) * (f/g) bei Vergleich 1 (Vgl1), IST AJ vs IST VJ
+    // werden hier als einzelne Felder definiert und im oberen LOAD block zu einer Formel zusammengefasst
+    // Die 6 Felder verwenden wir im GUI zur Veranschaulichung der komplexen Preissteigerungsformel
+    ,Replace(
+        'Sum({<Datenart={"IST"},Vorjahr={"0"} ,Bericht={"' & PStg_Bericht & '"},Level={"' & PStg_Level & '"},Path={"$1"}>} Wert)'
+        ,'$1', PStg_Selection) AS PStg_Formel_a_Vgl1
+    ,PurgeChar(
+        '$°(vKennz_generic($°(=PStg_KennzahlBericht),$°(=PStg_KennzahlTitel),IST,0))'
+        , '°')                       AS PStg_Formel_b_Vgl1
+    ,Replace(
+        'Sum({<Datenart={"IST"},Vorjahr={"-1"},Bericht={"' & PStg_Bericht & '"},Level={"' & PStg_Level & '"},Path={"$1"}>} Wert)'
+        ,'$1', PStg_Selection)       AS PStg_Formel_c_Vgl1
+    ,PurgeChar(
+        '$°(vKennz_generic($°(=PStg_KennzahlBericht),$°(=PStg_KennzahlTitel),IST,-1))'
+        , '°')                       AS PStg_Formel_d_Vgl1
+    ,Replace(
+        'Sum({<Datenart={"IST"},Vorjahr={"0"} ,Bericht={"' & PStg_Bericht & '"},Level={"' & PStg_Level & '"},Path={"$1"}>} Wert)'
+        ,'$1', PStg_Selection)       AS PStg_Formel_e_Vgl1
+    ,PurgeChar(
+        'Sum({<Datenart={"IST"},Vorjahr={"0"} ,Bericht={"' & PStg_Bericht & '"}, Path={"=$°(=Concat(''(Level='' & PStg_Vergleich_Level & '' AND Path LIKE ''& CHR(39) & PStg_Vergleich_Selection & CHR(39) & '')'', '' OR ''))"}>} Wert)'
+        , '°')                       AS PStg_Formel_f_Vgl1
+
+    // Komponenten des Doppelbruches ((a/b) / (d/e) -1) * (f/g) bei Vergleich 2 (Vgl2), PLAN AJ vs IST VJ
+    // werden hier als einzelne Felder definiert und im oberen LOAD block zu einer Formel zusammengefasst
+    // Die 6 Felder verwenden wir im GUI zur Veranschaulichung der komplexen Preissteigerungsformel
+    ,PurgeChar(Replace(
+        'Sum({<Datenart={"$°(vPlanversion)"},Vorjahr={"0"} ,Bericht={"' & PStg_Bericht & '"},Level={"' & PStg_Level & '"},Path={"$1"}>} Wert)'
+        ,'$1', PStg_Selection), '°') AS PStg_Formel_a_Vgl2
+    ,PurgeChar(
+        '$°(vKennz_generic($°(=PStg_KennzahlBericht),$°(=PStg_KennzahlTitel),$°(vPlanversion),0))'
+        , '°')                       AS PStg_Formel_b_Vgl2
+    ,Replace(
+        'Sum({<Datenart={"IST"},             Vorjahr={"-1"},Bericht={"' & PStg_Bericht & '"},Level={"' & PStg_Level & '"},Path={"$1"}>} Wert)'
+        ,'$1', PStg_Selection)       AS PStg_Formel_c_Vgl2
+    ,PurgeChar(
+        '$°(vKennz_generic($°(=PStg_KennzahlBericht),$°(=PStg_KennzahlTitel),IST,-1))'
+        , '°')                       AS PStg_Formel_d_Vgl2
+    ,PurgeChar(Replace(
+        'Sum({<Datenart={"$°(vPlanversion)"},Vorjahr={"0"} ,Bericht={"' & PStg_Bericht & '"},Level={"' & PStg_Level & '"},Path={"$1"}>} Wert)'
+        ,'$1', PStg_Selection), '°') AS PStg_Formel_e_Vgl2
+    ,PurgeChar(
+        'Sum({<Datenart={"$°(vPlanversion)"},Vorjahr={"0"} ,Bericht={"' & PStg_Bericht & '"}, Path={"=$°(=Concat(''(Level='' & PStg_Vergleich_Level & '' AND Path LIKE '' & CHR(39) & PStg_Vergleich_Selection & CHR(39) & '')'', '' OR ''))"}>} Wert)'
+	    , '°')                       AS PStg_Formel_f_Vgl2
+
+RESIDENT [~PStg_Definitionen];
+DROP TABLE [~PStg_Definitionen];
+
+// Zweite, unabhängige Listbox aber mit gleichen Inhalten
+PStg_Vergleich:
+LOAD 
+	Preissteigerung AS PStg_Vergleich 
+    ,PStg_Selection AS PStg_Vergleich_Selection
+    ,PStg_Level     AS PStg_Vergleich_Level
+RESIDENT 
+	PStg_Definitionen;
+
+
+PStg_Kennzahlen:
+LOAD *
+INLINE [PStg_KennzahlTitel , PStg_KennzahlBericht
+  'Zimmer belegt'          , Branchen-Kennzahlen
+  'Betten belegt'          , Branchen-Kennzahlen
+  'Betriebsleistung in EUR', Standardkennzahlen
+];
+
+
+LET vPStg_Vgl = 1;  // Vergleichs-formel aus Preissteigerung Tabelle, 
+ // Diese Variable wird im GUI mit einem Toggle zwischen 1 und 2 gewechselt,
+ // und bewirkt, dass entweder PStg_Formel_Vgl1 oder PStg_Formel_Vgl2 zur
+ // Preissteigerung herangezogen wird.
+  

@@ -1,0 +1,311 @@
+TRACE ---------------------------------------;
+TRACE including 10_Subs.qvs / Version 1.11;
+// Change Log
+// 1.02, 13-Oct-2021, Feld 'Link' hinzugefügt
+// 1.03, 01-Dez-2021, Feld 'variabel' hinzugefügt, neue SUB getAllFieldValues
+// 1.04, 04-Nov-2022, Möglichkeit zum Verfälschen von Werten vFalsifyFactor eingebaut
+// 1.11, 13-Mär-2023, Zeit_ID wird nicht mehr aus linken 6 Zeichen der Excelcolumn, sondern als Mid(8,6) geholt
+// 1.12, 25-Nov-2024, fix für 13. Kalendermonat, wird wie 12. im Kalenderfeld Zeit_ID betrachtet.
+
+SUB ImportData (paramTargetTable, paramFilePath, paramSheet, paramBetriebNr, paramBetriebName, paramGJBeginn)
+
+     
+    tmp:
+    NOCONCATENATE
+    LOAD 
+                     Left(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5, Index(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5&'\', '\', Level) -1)  AS Path,
+        If(Level>=2, Left(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5, Index(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5&'\', '\', 2    ) -1)) AS L1L2,
+        If(Level>=3, Left(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5, Index(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5&'\', '\', 3    ) -1)) AS L1L2L3,
+        If(Level>=4, Left(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5, Index(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5&'\', '\', 4    ) -1)) AS L1L2L3L4,
+        If(Level>=5, Left(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5, Index(L1&'\'&L2&'\'&L3&'\'&L4&'\'&L5&'\', '\', 5    ) -1)) AS L1L2L3L4L5,
+        *;
+    LOAD   
+        RecNo() AS ExcelRow,
+        If(Level=1, Label, Peek('L1')) AS L1,
+        If(Level>=2, If(Level=2, Label, Peek('L2'))) AS L2,
+        If(Level>=3, If(Level=3, Label, Peek('L3'))) AS L3,
+        If(Level>=4, If(Level=4, Label, Peek('L4'))) AS L4,
+        If(Level>=5, If(Level=5, Label, Peek('L5'))) AS L5,
+        * 
+    FROM 
+        [$(paramFilePath)]
+        (ooxml, embedded labels, table is [$(paramSheet)])
+    WHERE
+        Len(Level);
+
+    LET subDropFieldList = '';
+    LET subDataFieldList = '';
+    LET subDataFieldsCount = 0;
+    SET subKnownCrossColumns = '19??0?:*', '19??1?:*', '20??0?:*', '20??1?:*';
+	SET subKnownFields = 'MustImport', 'Umverteil', 'effektUmverteil', 'Wasserfall', 'variabel', 'Konto', 'Level', 'Label', 'Link', 'Format', 'L?', 'ExcelRow', 'L1L*', 'Path', 'NoSum';
+    
+    
+    // Analysiere, welche Spalten behalten werden und welche nicht
+     FOR subN = NoOfFields('tmp') TO 1 STEP -1
+        LET subField = FieldName(subN, 'tmp');
+        
+        IF WildMatch(subField, $(subKnownCrossColumns)) THEN
+            LET subDataFieldList = subDataFieldList & IF(Len(subDataFieldList), ',') & '[$(subField)]';
+            LET subDataFieldsCount = subDataFieldsCount + 1;
+        ENDIF
+        
+        IF Not WildMatch(subField, $(subKnownFields),$(subKnownCrossColumns)) THEN
+            LET subDropFieldList = subDropFieldList & IF(Len(subDropFieldList), ',') & '[$(subField)]';
+        END IF
+        
+    NEXT subN
+    
+    //TRACE subDataFieldList: $(subDataFieldList);
+    TRACE subDropFieldList: $(subDropFieldList);
+    TRACE subDataFieldsCount: $(subDataFieldsCount);
+  	IF subDataFieldsCount = 0 THEN
+    	[Error: Keine einzige Spalte mit dem Namen YYYYMM:YYYYMM#... gefunden];
+    END IF
+
+    LET subMsg = 'From ' & NoOfFields('tmp') & ' fields, ';
+    IF Len('$(subDropFieldList)') THEN 
+    	DROP FIELDS $(subDropFieldList) FROM tmp;
+    END IF
+    
+    LET subAttrFieldsCount = NoOfFields('tmp') - subDataFieldsCount;
+    
+    LET subMsg = subMsg & NoOfFields('tmp') & ' are kept.' & CHR(10)
+        & subAttrFieldsCount & ' are attribute fields, the rest is cross-table';
+    TRACE [$(subMsg)];
+	//TRACE `Data fields $(subDataFieldList)`;
+
+	LET subOr_MustImport = If(FieldNumber('MustImport','tmp'), 'OR MustImport', '');
+    
+    // Wenn Format feld importiert wurde, fülle leere stellen mit '#.##0' auf. Wenn das feld fehlt, lege es mit '#.##0' an
+    LET subAttrFieldsCount = subAttrFieldsCount +1;
+    LET subFormat = If(FieldNumber('Format','tmp'), 'If(Len(Format),Format,''#.##0'') AS qFormat', ' ''#.##0'' AS qFormat');
+    
+
+	xTmp:
+    CROSSTABLE ('ExcelColumn', 'Wert', $(subAttrFieldsCount))
+    LOAD 
+        $(subFormat),
+        *
+    RESIDENT 
+        tmp
+    WHERE 
+        // Zeilen, die nur 0 liefern werden gar nicht importiert.
+        (NOT (RangeMin($(subDataFieldList)) = 0 AND RangeMax($(subDataFieldList)) = 0))
+        $(subOr_MustImport);
+
+	IF NoOfRows('xTmp') = 0 THEN
+        LET vErrorMsg = 'Excel Sheet "$(paramSheet)" in File "$(paramFilePath)" enthält nur Nullen. Bitte zuerst refreshen und speichern.';
+    	TRACE ********************************************************;
+        TRACE `$(vErrorMsg)`;
+        TRACE ********************************************************;
+        CONCATENATE (ERRORS) 
+        LOAD '$(vErrorMsg)' AS ErrorMsg 
+        AUTOGENERATE(1);
+    END IF
+    
+    DROP TABLE tmp;
+    
+    IF FieldNumber('Format','xTmp') THEN
+    	DROP FIELD Format FROM xTmp;
+    END IF
+    
+	// jetzt gruppiere die beiden Zeilen mit NumOderProzent (Stelle 7 in ExcelColumn) in eine Zeile, 2 Spalten
+    // Aufbau von ExcelColumn = YYYYMM:YYYYMM#DATENART oder YYYYMM:YYYYMM%DATENART 
+	// Füge weitere berechnete Spalten hinzu
+
+ 
+    xTmp2:
+    //LOAD *, 
+    //LEFT JOIN (xTmp)
+    LOAD DISTINCT
+        *,
+        Wert * $(vFalsifyFactor) AS WertFalse,
+    	Left(ExcelColumn,6) & Mid(ExcelColumn,8) AS %JoinKey,
+    // JOIN ON
+    //    ExcelColumn,
+    // Add fields
+        //Left(ExcelColumn,6) AS Zeit_ID,
+        IF(Mid(ExcelColumn, 8, 6) LIKE '????13', 
+            Mid(ExcelColumn, 8, 4) & '12', 
+            Mid(ExcelColumn, 8, 6)) AS Zeit_ID,
+        '$(paramBetriebNr);' & Mid(ExcelColumn,8,6) AS %BetriebZeit,
+        //Mid(ExcelColumn,7,1) AS NumOderProzent,
+        Mid(ExcelColumn,15) AS Datenart,
+        $(paramBetriebNr) AS Betrieb_ID,
+        '$(paramBetriebName)' AS Betrieb,
+        '$(paramFilePath)' AS SourceFile,
+        '$(paramSheet)' AS Bericht,
+        $(paramGJBeginn) AS gj_beginn
+    RESIDENT
+        xTmp
+    WHERE
+    	Mid(ExcelColumn,14,1) = '#';
+
+    LET subRows = NoOfRows('xTmp2');
+        
+    LEFT JOIN (xTmp2)
+    LOAD
+    // JOIN ON
+    	Left(ExcelColumn,6) & Mid(ExcelColumn,8) AS %JoinKey,
+        ExcelRow,
+    // ADD FIELD(S)
+    	Wert AS Wert%,
+        ExcelColumn AS ExcelColumn%
+    RESIDENT 
+    	xTmp
+    WHERE 
+    	Mid(ExcelColumn,14,1) = '%';
+    
+    DROP FIELD ExcelColumn FROM xTmp;
+    
+    LET subRows = NoOfRows('xTmp2') -subRows;
+    IF subRows <> 0 THEN 
+        SET ErrorMode = 0;
+    	[ERROR: Before LEFT JOIN changed # of rows by $(subRows). Must not happen.];
+        EXIT SCRIPT;
+    END IF
+    
+    DROP TABLE xTmp; 
+    DROP FIELD %JoinKey FROM xTmp2;    
+    
+    // Erzeuge eine Variable, die alle Felder von xTmp2 außer "Wert" auflistet
+    LET vFieldList = '';
+    FOR vFieldIndex = 1 TO NoOfFields('xTmp2');
+        IF FieldName(vFieldIndex, 'xTmp2') <> 'Wert' THEN
+            LET vFieldList = If(Len(vFieldList), vFieldList & ',[', '[') & FieldName(vFieldIndex, 'xTmp2') & ']';
+        END IF
+    NEXT vFieldIndex
+    LET vFieldIndex = Null();
+
+    // Füge der Feldliste noch das Feld Wert hinzu, in manchen Fällem mit einem Verfälschungs-Faktor
+    IF WildMatch(DocumentTitle(), $(vFalsifyApps)) THEN
+        TRACE >>>> Daten in dieser App werden mit Faktor $(vFalsifyFactor) verfälscht <<<<;
+        LET vFieldList = vFieldList & ',Wert * $(vFalsifyFactor) AS Wert'; 
+    ELSE 
+        LET vFieldList = vFieldList & ',Wert'; 
+    END IF
+
+    CONCATENATE ([$(paramTargetTable)]) 
+    LOAD $(vFieldList) 
+    RESIDENT xTmp2;
+
+    // Hack um zu sehen, wie ein umgeformter Excel import aussehen muss.
+    // STORE xTmp2 INTO [$(vBaseFolder)/Naturel Hotels & Resorts/Saldenlisten/$(paramTargetTable)_Sample.qvd] (qvd);
+    
+    DROP TABLE xTmp2;
+    
+    // Delete temp variables
+    LET subN = Null();
+    LET subMsg = Null();
+    LET subRows = Null();
+    LET subAttrFieldsCount = Null();
+    LET subDropFieldList = Null();
+    LET subDataFieldList = Null();
+    LET subDataFieldsCount = Null();
+    LET subKnownCrossColumns = Null();
+    LET subKnownFields = Null();
+    LET subOr_MustImport = Null();
+    
+END SUB
+
+
+
+SUB CreatePrevNextVar(paramField, paramType, paramPrecision)
+
+  /*
+  Author: Christof Schwarz
+  Version: 1.0 - 04-SEP-2021
+  
+  This sub will create 4 variables for a given fieldname (provided in paramField). The
+  paramType is one of the following (case-insensitive): 
+  Txt or Text, Int or Integer, Num or Numeric, Dual, Date, DateTime or Timestamp 
+  
+  The optional 3rd parameter is Precision and is needed for numeric values with decimals
+  (a timestamp for example has up to 9 digits after the decimal sign!) and it defines how
+  many digits after the decimal need to be identical for a match (e.g. 1e-8 or 1e-9).
+  The 3rd parameter will get an intelligent default if you don't provide it.
+  
+  Examples: 
+  For a text field you'd CALL CreatePrevNextVar('ProductCategory', 'Text')
+  and you get 4 variables:
+  [vNext:ProductCategory] ... a search string for the [Next] Action Button
+  [vPrev:ProductCategory] ... a search string for the [Prev] Action Button
+  [vNextVal:ProductCategory] ... a text with the next value after the current
+  [vPrevVal:ProductCategory] ... a text with the previous value after the current
+
+  For a timestamp field you'd CALL CreatePrevNextVar('CreationDateTime', 'timestamp')
+  and you get 4 variables:
+  [vNext:CreationDateTime] ... a search string for the [Next] Action Button
+  [vPrev:CreationDateTime] ... a search string for the [Prev] Action Button
+  [vNextVal:CreationDateTime] ... a text with the next value after the current
+  [vPrevVal:CreationDateTime] ... a text with the previous value after the current
+  */
+  
+  // Get an intelligent default for privPrecision, if paramPrecision was omitted
+  IF '$(paramPrecision)' = '' THEN
+      IF Wildmatch(paramType, 'Datetime','Timestamp') THEN
+          LET privPrecision = Num(1/24/3600/1000/2, '', '.', ' ');
+      ELSEIF Wildmatch(paramType, 'Num*') THEN
+          SET privPrecision = 1E-9;
+      ELSE
+          LET privPrecision = 0;
+      END IF
+  ELSE
+      LET privPrecision = Num(Alt('$(paramPrecision)', 0), '', '.', ' ');
+  END IF
+  
+  TRACE `SUB CreatePrevNextVar('$(paramField)', '$(paramType)', $(privPrecision))`;
+
+  // Create Next Value and Prev Value variables
+  LET [vNextVal:$(paramField)] = 'If(IsNull([$(paramField)]), MinString([$(paramField)]),
+    MinString(TOTAL {<[$(paramField)]={"=Only({<[$(paramField)]=>}[$(paramField)]) > Only(TOTAL [$(paramField)])"}>} [$(paramField)])
+  )';
+  LET [vPrevVal:$(paramField)] = 'If(IsNull([$(paramField)]), MaxString([$(paramField)]),
+    MaxString(TOTAL {<[$(paramField)]={"=Only({<[$(paramField)]=>}[$(paramField)]) < Only(TOTAL [$(paramField)])"}>} [$(paramField)])
+  )';
+  
+  // Create the search strings for the Next and Prev Action Buttons based on the type 
+  
+  IF paramType LIKE 'T*xt' THEN
+  
+    LET [vNext:$(paramField)] = CHR(39) & '=Only({<[$(paramField)]=>}[$(paramField)])=''''$' & '(=' & [vNextVal:$(paramField)] & ')''''' & CHR(39);    
+    LET [vPrev:$(paramField)] = CHR(39) & '=Only({<[$(paramField)]=>}[$(paramField)])=''''$' & '(=' & [vPrevVal:$(paramField)] & ')''''' & CHR(39);    ;
+    LET privPrecision = Null();
+      
+  ELSEIF Wildmatch(paramType, 'Num*', 'Int*', 'Dual', 'Date', 'Datetime', 'Timestamp') THEN
+  
+    LET [vNext:$(paramField)] = 'Num(If(IsNull([$(paramField)]), Min([$(paramField)]),
+      Min(TOTAL {<[$(paramField)]={"=Only({<[$(paramField)]=>}[$(paramField)]) > Only(TOTAL [$(paramField)])"}>} [$(paramField)])
+    ),'''',''.'','' '')';
+    LET [vPrev:$(paramField)] = 'Num(If(IsNull([$(paramField)]), Max([$(paramField)]),
+      Max(TOTAL {<[$(paramField)]={"=Only({<[$(paramField)]=>}[$(paramField)]) < Only(TOTAL [$(paramField)])"}>} [$(paramField)])
+    ),'''',''.'','' '')';
+    IF privPrecision = 0 THEN
+      LET [vNext:$(paramField)] = CHR(39) & '=Only({<[$(paramField)]=>}[$(paramField)]) = $' & '(=' & [vNext:$(paramField)] & ')' & CHR(39);
+      LET [vPrev:$(paramField)] = CHR(39) & '=Only({<[$(paramField)]=>}[$(paramField)]) = $' & '(=' & [vPrev:$(paramField)] & ')' & CHR(39);
+    ELSE
+      LET [vNext:$(paramField)] = CHR(39) & '=FAbs(Only({<[$(paramField)]=>}[$(paramField)]) - $' & '(=' & [vNext:$(paramField)] & ')) < ' & privPrecision & CHR(39);
+      LET [vPrev:$(paramField)] = CHR(39) & '=FAbs(Only({<[$(paramField)]=>}[$(paramField)]) - $' & '(=' & [vPrev:$(paramField)] & ')) < ' & privPrecision & CHR(39);
+    END IF
+ 	LET privPrecision = Null();
+    
+  ELSE
+  
+    LET privPrecision = Null();
+    // Throw error 
+    [SUB CreatePrevNextVar: Unknown Field type "$(paramType)"];
+  END IF
+
+END SUB
+
+
+SUB getAllFieldValues (param_Field)
+// concatenates all distinct field values into a semicolon-separated list and sets it into
+// a variable names like 'vFieldValues:' + param_Field
+  [FieldValues:$(param_Field)]:
+  LOAD Concat(_FieldValue,';') AS _FieldValues;
+  LOAD FieldValue('$(param_Field)', RecNo()) AS _FieldValue 
+  AUTOGENERATE(FieldValueCount(param_Field));    
+  LET [vFieldValues:$(param_Field)] = Peek('_FieldValues',-1,'FieldValues:$(param_Field)');
+  DROP TABLE [FieldValues:$(param_Field)];
+END SUB

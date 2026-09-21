@@ -1,0 +1,135 @@
+TRACE ---------------------------------------;
+TRACE including 25_Kontenmapping.qvs / Version 1.28;
+
+// 1.10  20.Mär.2022 Laden von mehreren Kontenmappings mit Wildcard und "gültig ab" Bedeutung
+// 1.11  20.Apr.2022 Spalte "Mapping.Kostenstelle"
+// 1.20  07.Jul.2022 Schleife für mehrere BetriebNr
+// 1.25  18-Oct-2022 %Kostenstelle zu zusammengesetzem Schlüssel zu Kontenmapping hinzugefügt 
+// 1.26  18-Jan-2023 Spalte "Kontenart" mit importieren
+// 1.27  01-Mar-2023 bugfix
+// 1.28  19-Sep-2023 Fix für sog. Wendekonten für feld Mapping.IgelPfad
+
+SUB LadeKontenMappingAusCache(paramTable, paramZeitID)
+
+ 	TRACE Aufruf Sub LadeKontenMappingAusCache, ZeitID: $(paramZeitID) aus $(paramTable);
+    FOR EACH vBetriebNrEinzel IN $(vBetriebNrGesucht)
+
+        TRACE LadeKontenMappingsAusCache $(vBetriebNrEinzel) aus $(vBetriebNrGesucht);
+        
+        CONCATENATE (KontenMapping)
+        LOAD 
+            0 AS %IstNegativ
+            ,@1 /*A*/ AS %KundenKontoNr
+            ,@2 /*B*/ AS %Kostenstelle
+            ,@2 /*B*/ AS Mapping.Kostenstelle
+            ,@4 /*D*/ AS KontoName
+            ,@5 /*E*/ AS Mapping.Faktor
+            ,@6 /*F*/ AS Mapping.IgelPfad
+            ,@7 /*G*/ AS Mapping.Kontenart
+            ,@8 /*H*/ & '@$(vBetriebNrEinzel)' AS %IgelKtoNr
+            ,'$(paramZeitID)' AS Zeit_ID
+            ,'$(paramZeitID)' AS %Zeit_ID2
+            ,'$(paramTable)' AS Mapping.Quelle
+        RESIDENT 
+            [$(paramTable)];
+
+        CONCATENATE (KontenMapping)
+        LOAD
+            1 AS %IstNegativ
+            ,@1 /*A*/ AS %KundenKontoNr
+            ,@2 /*B*/ AS %Kostenstelle
+            ,@2 /*B*/ AS Mapping.Kostenstelle
+            ,@4 /*D*/ AS KontoName
+            ,@5 /*E*/ AS Mapping.Faktor
+            //,@6 /*F*/ AS Mapping.IgelPfad
+            ,If(@9 /*I*/ LIKE 'KEINE ZUORDNUNG', @6 /*F*/, @9 /*I*/) AS Mapping.IgelPfad  // fix 19.09.2023
+            ,@7 /*G*/ AS Mapping.Kontenart
+            ,If(@9 /*I*/ LIKE 'KEINE ZUORDNUNG', @8 /*H*/, @11 /*K*/) & '@$(vBetriebNrEinzel)' AS %IgelKtoNr 
+            ,'$(paramZeitID)' AS Zeit_ID
+            ,'$(paramZeitID)' AS %Zeit_ID2
+            ,'$(paramTable)' AS Mapping.Quelle   
+        RESIDENT
+            [$(paramTable)];
+        
+    NEXT vBetriebNrEinzel
+END SUB
+
+
+IF Len('$(vMappingFile)') THEN
+
+    sortZeitID:  // sortiere Zeit_ID (temporäre Tabelle)
+    LOAD DISTINCT 
+        Zeit_ID AS Zeit_ID.sort
+    RESIDENT 
+        BerichtZeilen0
+    ORDER BY 
+        Zeit_ID ASC;
+
+	LET vCleanupTables = '';
+    
+    KontenMapping:
+    LOAD * 
+    INLINE [%IstNegativ, %KundenKontoNr, %IgelKtoNr, %Zeit_ID2, Zeit_ID]; // Erzeuge leere Tabelle KontenMapping
+    
+    LET vLastGoodFile = '';
+    LET vLastErrorCount = 0;
+
+    FOR v = 1 TO FieldValueCount('Zeit_ID.sort');
+
+        LET vZeitID = FieldValue('Zeit_ID.sort', v);
+    	//LET vMappingFile2 = Replace(vMappingFile, '-88', 'ab ' & vZeitID);  // Testzwecke
+        LET vMappingFile2 = Replace(vMappingFile, '*', vZeitID);
+		LET vFile = '$(vBaseFolder)/$(vMappingFile2)';
+        LET vFileBaseName = SubField(vFile, '/', -1);
+        
+        TRACE $(v): $(vZeitID);
+        TRACE <<< Mapping File: $(vFile);
+
+		IF Len(TableNumber('$(vFileBaseName)')) THEN
+        	// File ist schon im Mem gecached, lade KontenMapping aus dem Cache
+            TRACE File schon im Cache: $(vFileBaseName);
+            CALL LadeKontenMappingAusCache(vFileBaseName, vZeitID);
+        ELSE
+        	// File ist noch nicht in Mem, versuche es zu laden
+            
+            LET ErrorMode = 0;  // Bei Fehler weitermachen
+            
+            [$(vFileBaseName)]:
+            NOCONCATENATE LOAD *
+            FROM [$(vFile)] (biff, no labels, table is [@1]);           
+            
+            LET ErrorMode = 1;
+            LET vFileExists = (ScriptErrorCount = vLastErrorCount);  // wenn kein (weiterer) Scriptfehler aufgetreten ist, gab es das file und es ist nun in Mem
+            LET vLastErrorCount = ScriptErrorCount;
+            
+            IF vFileExists THEN
+            	TRACE $(vFileBaseName) ist nun in Mem;
+            	// File gibt es und es ist nun im Mem gecached
+                CALL LadeKontenMappingAusCache(vFileBaseName, vZeitID);
+                LET vLastGoodFile = vFileBaseName;
+                LET vCleanupTables = vCleanupTables & If(Len(vCleanupTables), ',') & CHR(39) & vFileBaseName & CHR(39);
+                
+            ELSE
+            	// File gibt es nicht. 
+                
+                IF vLastGoodFile = '' THEN
+                    // Abbruch mit Fehlermeldung.
+                    [Error: Für die älteste ZeitID ($(vZeitID)) MUSS es ein Mapping file geben.];
+                ELSE
+                	TRACE Für $(vZeitID) gibt es kein Kontomapping, verwende $(vLastGoodFile);
+					CALL LadeKontenMappingAusCache(vLastGoodFile, vZeitID)
+                END IF
+                
+            END IF
+    
+        END IF
+        
+    NEXT v;
+
+    DROP TABLE sortZeitID;
+
+	TRACE `Now cleanup $(vCleanupTables)`;
+    FOR EACH v IN $(vCleanupTables)
+     	DROP TABLE [$(v)];
+    NEXT v
+END IF

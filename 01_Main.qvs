@@ -1,5 +1,12 @@
 TRACE ---------------------------------------;
-TRACE including 01_Main.qvs;
+TRACE including 01_Main.qvs / Version 1.02;
+
+// Change History
+// 1.01, 04-Nov-2022, Möglichkeit zum Verfälschen von Werten vFalsifyFactor eingebaut
+// 1.02, 10-Okt-2022
+SET vBaseFolder = [lib://Igel:OneDrive/digipoint];
+TRACE ⭐ vBaseFolder ist $(vBaseFolder);
+
 SET ThousandSep='.';
 SET DecimalSep=',';
 SET MoneyThousandSep='.';
@@ -23,9 +30,16 @@ SEARCH INCLUDE '*';
 SEARCH EXCLUDE '%*';
 SET DISABLE_INSIGHTS = ''; // '1' off, '' on
 
+SET vFalsifyApps = `'Test Hotel [543]', 'Hotel - Der Kaiser [613]'`;
+LET vFalsifyFactor = 0.347;
 
-
+// Lege Felder, die "always one selected value" im UI angewählt haben, immer im Datenmodell vorhanden
+// sind, selbst wenn das Script mit einem Fehler abbricht, werden sie hier schon einmal temporär angelegt und
+// im Script 99_Exit.qvs wieder entfernt
 SET vSingleValueFields = 'Toggle','Bericht','Datenarten','Betrieb';
 FOR EACH vSingleValueField IN $(vSingleValueFields)
-	[$(vSingleValueField)]: LOAD * INLINE [$(vSingleValueField)];
+	[$(vSingleValueField)]: LOAD '' AS [$(vSingleValueField)] AUTOGENERATE(1);
 NEXT vSingleValueField
+
+// Tabelle, in die - wenn nötig - diverse Fehlermeldungen geladen werden
+ERRORS: LOAD * INLINE [ErrorMsg];

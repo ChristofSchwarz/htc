@@ -1,0 +1,103 @@
+TRACE ---------------------------------------;
+TRACE including 40_Table_Bericht_postprocess.qvs / Version 1.04;
+
+// v1.01, 28.06.2021, Feld %IstNegativ eingeführt
+// v1.02, 01.12.2021, PRüfung auf unerlaubte Werte im Feld Wasserfall, Felder fix% und variabel% hinzugefügt
+// v1.03, 05.01.2022, Fix für Wasserfallprüfung, kann auch 1, -1 oder leer sein
+// v1.04, 07.07.2022, Zusätzliche Id-Felder (Id.1 bis Id.5), die ohne Betrieb eindeutig ist (Konsolidierung)
+
+// erzeuge eine eindeutige Nummer hinter jedem L1, L1L2, L1L2L3, L1L2L3L4 Feld, zusammengesetzt aus autoId L1, L1L2, L1L2L3, L1L2L3L4 
+// * 1000 + autoId Bericht + Betrieb_ID als Nachkomma decimalanteil
+//STORE BerichtZeilen1 INTO [lib://DataFiles/BerichtZeilen1.qvd] (qvd);
+
+BerichtZeilen:
+NOCONCATENATE LOAD
+	*,
+	            (FieldIndex('Bericht', Bericht)* 1000000 + FieldIndex('L1'      , L1      )) + Betrieb_ID/Pow(10,Len(Betrieb_ID))  AS Id1,
+    If(Level>=2,(FieldIndex('L1L2'      , L1L2    )  * 1000 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID))) AS Id2,
+    If(Level>=3,(FieldIndex('L1L2L3'    , L1L2L3  )  * 1000 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID))) AS Id3,
+    If(Level>=4,(FieldIndex('L1L2L3L4'  , L1L2L3L4)  * 1000 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID))) AS Id4,     
+    If(Level>=5,(FieldIndex('L1L2L3L4L5', L1L2L3L4L5)* 1000 + FieldIndex('Bericht', Bericht)) + Betrieb_ID/Pow(10,Len(Betrieb_ID))) AS Id5,         
+// Id ohne Betrieb
+	            (FieldIndex('Bericht', Bericht)* 1000000  + FieldIndex('L1'      , L1      ))  AS Id.1,
+    If(Level>=2,(FieldIndex('L1L2'      , L1L2    )  * 1000 + FieldIndex('Bericht', Bericht))) AS Id.2,
+    If(Level>=3,(FieldIndex('L1L2L3'    , L1L2L3  )  * 1000 + FieldIndex('Bericht', Bericht))) AS Id.3,
+    If(Level>=4,(FieldIndex('L1L2L3L4'  , L1L2L3L4)  * 1000 + FieldIndex('Bericht', Bericht))) AS Id.4,     
+    If(Level>=5,(FieldIndex('L1L2L3L4L5', L1L2L3L4L5)* 1000 + FieldIndex('Bericht', Bericht))) AS Id.5,         
+
+    Fabs(Wert<0) AS %IstNegativ,
+    If(Len(variabel), 1 - variabel) AS fix%, 
+    variabel AS variabel%,
+	SubField(Konto,'|',1) & '@' & Betrieb_ID AS %IgelKtoNr,
+    RowNo() AS AutoId
+RESIDENT
+	BerichtZeilen1;
+
+DROP FIELD variabel FROM BerichtZeilen;    
+DROP TABLE BerichtZeilen1;    
+
+CALL getAllFieldValues('Wasserfall');
+IF Match([vFieldValues:Wasserfall], '1', '-1', '-1;1', '') = 0 THEN
+    [Wasserfall hat nicht erlaubte Werte, sollte nur -1;1 sein, ist aber $(vFieldValues:Wasserfall)];
+END IF
+
+// L1Dual: 
+// LOAD DISTINCT 
+//     Dual(L1,Id1) AS L^1, Id1 
+// RESIDENT BerichtZeilen WHERE Len(L1);    
+
+// L2Dual: 
+// LOAD DISTINCT 
+//     Dual(L2,Id2) AS L^2, Id2 
+// RESIDENT BerichtZeilen WHERE Len(L2);
+
+// L3Dual: 
+// LOAD DISTINCT 
+//     Dual(L3,Id3) AS L^3, Id3 
+// RESIDENT BerichtZeilen WHERE Len(L3);
+
+// L4Dual: 
+// LOAD DISTINCT 
+//     Dual(L4,Id4) AS L^4, Id4 
+// RESIDENT BerichtZeilen WHERE Len(L4);
+
+// L5Dual: 
+// LOAD DISTINCT 
+//     Dual(L5,Id5) AS L^5, Id5 
+// RESIDENT BerichtZeilen WHERE Len(L5);
+
+
+L1Dual: 
+LOAD DISTINCT 
+    Dual(L1,Id.1) AS L^1, 
+    Id.1 
+RESIDENT BerichtZeilen 
+WHERE Len(L1);    
+
+L2Dual: 
+LOAD DISTINCT 
+    Dual(L2,Id.2) AS L^2, 
+    Id.2 
+RESIDENT BerichtZeilen 
+WHERE Len(L2);
+
+L3Dual: 
+LOAD DISTINCT 
+    Dual(L3,Id.3) AS L^3, 
+    Id.3 
+RESIDENT BerichtZeilen 
+WHERE Len(L3);
+
+L4Dual: 
+LOAD DISTINCT 
+    Dual(L4,Id.4) AS L^4, 
+    Id.4 
+RESIDENT BerichtZeilen 
+WHERE Len(L4);
+
+L5Dual: 
+LOAD DISTINCT 
+    Dual(L5,Id.5) AS L^5, 
+    Id.5 
+RESIDENT BerichtZeilen 
+WHERE Len(L5);

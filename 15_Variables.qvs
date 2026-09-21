@@ -1,0 +1,111 @@
+TRACE ---------------------------------------;
+TRACE including 15_Variables.qvs / Version 1.11;
+// lies variablen Definitionen aus Excel ein
+// 1.04  22.Dez.2021 Liest auch Format mit ein und wrappt ein Num(...) drum rum.
+// 1.05  05.Jan.2022 Lädt in Tabelle auch Spalte Icon
+// 1.10  02.Feb.2022 Neue tabelle "KennzahlenGruppen"
+// 1.11  23.Feb.2022 Neues Feld "MehrIstBesser" bei Kennzahlen
+
+Formeln:
+LOAD
+    Variable,
+    Definition,
+    Format
+FROM 
+    [$(vBaseFolder)/_Verzeichnis-Index.xlsm]
+    (ooxml, embedded labels, table is Formeln)
+WHERE 
+    Len(Variable) AND Coalesce(Active, 1);
+    
+CONCATENATE (Formeln)
+LOAD
+    Variable,
+    Definition,
+    Format,
+    Kurzerklärung,
+    MehrIstBesser,
+    Titel,
+    Icon
+FROM 
+    [$(vBaseFolder)/_Verzeichnis-Index.xlsm]
+    (ooxml, embedded labels, table is Kennzahlen)
+WHERE 
+    Len(Variable) AND Coalesce(Active, 1);
+
+
+FOR v = 1 TO NoOfRows('Formeln');
+	LET vVarName = Peek('Variable', v-1, 'Formeln');
+    LET vFormat = Peek('Format', v-1, 'Formeln');
+    LET [$(vVarName)] = If(Len(vFormat), 'Num(') & Peek('Definition', v-1, 'Formeln')
+        & If(Len(vFormat), ',''$(vFormat)'','','',''.'')');
+    TRACE Setze Variable $(vVarName);
+NEXT v;
+
+TRACE Lese Kundenfarben ...;
+
+Kundenfarben:
+LOAD
+    *
+FROM 
+    [$(vBaseFolder)/_Verzeichnis-Index.xlsm]
+    (ooxml, embedded labels, table is Farben)
+WHERE
+    Kunde = '$(vBetriebNr)';
+
+IF NoOfRows('Kundenfarben') = 0 THEN
+    TRACE [<<ACHTUNG Kunde $(vBetriebNr) hat keine Farben! Nehme die von HTC>>];
+
+    CONCATENATE LOAD
+        *
+    FROM 
+        [$(vBaseFolder)/_Verzeichnis-Index.xlsm]
+        (ooxml, embedded labels, table is Farben)
+    WHERE
+        Kunde = 'HTC';
+    IF NoOfRows('Kundenfarben') = 0 THEN
+        [Keine Kundenfarben für HTC definiert];
+    ENDIF    
+ELSE
+
+    FOR v = 1 TO NoOfFields('Kundenfarben');
+        LET vColumn = FieldName(v, 'Kundenfarben');
+        LET [vColor_$(vColumn)] = Peek(vColumn, -1, 'Kundenfarben');
+    NEXT v
+END IF
+DROP FIELD Kunde FROM Kundenfarben;
+
+GuidedTours:
+LOAD 
+    *
+FROM 
+    [$(vBaseFolder)/_Verzeichnis-Index.xlsm]
+    (ooxml, embedded labels, table is GuidedTours);
+
+
+KennzahlenGruppenDef:
+LOAD
+	*
+FROM 
+	[$(vBaseFolder)/_Verzeichnis-Index.xlsm]
+	(ooxml, embedded labels, table is Kennzahlen)
+WHERE
+    Active;
+
+FOR vFieldNo = 5 TO NoOfFields('KennzahlenGruppenDef')
+	LET vField = FieldName(vFieldNo, 'KennzahlenGruppenDef');   
+    
+    IF Match(vField, 'Active','Titel','Variable','Definition','Kurzerklärung','MehrIstBesser','Format','Icon') = 0 THEN
+        TRACE Kennzahl Gruppe $(vField);
+        
+    	KennzahlenGruppen:
+    	LOAD 
+        	Variable,
+            '$(vField)' AS KennzGrp
+        RESIDENT
+            KennzahlenGruppenDef
+        WHERE
+            Alt([$(vField)], 0);
+    END IF    
+NEXT vFieldNo
+
+DROP TABLE KennzahlenGruppenDef;

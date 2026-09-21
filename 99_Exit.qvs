@@ -1,4 +1,26 @@
 TRACE ---------------------------------------;
-TRACE Including 99_Exit.qvs;
-CALL Cleanup;  // defined in 00_Subs.qvs ...
+TRACE Including 99_Exit.qvs / Version 1.02;
+
+// 1.02, 30.11.2022, Neues Dual-Feld "Monat" eingeführt, CreatePrevNextVar
+
+// temp angelegte Tabellen mit "always one selected value"-Feldern werden wieder gelöscht
+FOR EACH vSingleValueField IN $(vSingleValueFields)
+	DROP TABLE [$(vSingleValueField)];
+NEXT vSingleValueField
+
+// Nächster/Voriger Wert Tasten  
+CALL CreatePrevNextVar('JahrMonat', 'Dual');
+CALL CreatePrevNextVar('Monat', 'Dual');
+CALL CreatePrevNextVar('Jahr', 'Text');
+
+tChartOptions1:
+LOAD * INLINE [
+	%ChartOption1
+	Erlöse Ist
+	Erlöse Plan
+	Erlöse Vorjahr
+];
+
+LET vDatenart = 'IST';
+LET vPlanversion = 'PLAN 1';
 EXIT SCRIPT;

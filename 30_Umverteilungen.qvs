@@ -1,0 +1,416 @@
+TRACE ---------------------------------------;
+TRACE including 30_Umverteilungen.qvs / Version 1.04;
+// Change Log
+// 1.01, 13.Okt.2021, Feld 'Link' hinzugefügt
+// 1.02, 20.Okt.2021, Feld 'PathEnd' hinzugefügt
+// 1.03, 01.Dez.2021, Feld 'variabel' hinzugefügt
+// 1.04, 20.Apr.2022, Tabelle Umverteilung wird angelegt wenn noch nicht geladen.
+
+// Wenn Keine Tabelle Umverteilung existiert, lege sie an mit 0 Zeilen
+
+IF Alt(TableNumber('Umverteilungen'), -1) = -1 THEN
+    Umverteilungen:
+    LOAD * INLINE [Umverteil, Zeit_ID, BerichtNeu, NewNodeName, AufteilSchluessel];
+END IF
+
+SET vWeitereFelder = SourceFile, Betrieb, ExcelRow, MustImport, Wasserfall, variabel, Konto, %BetriebZeit, gj_beginn ,Level, Link;
+//  Label, L1, L2, L3, L4, L5, L1L2, L1L2L3, L1L2L3L4, L1L2L3L4L5  // müssen neu berechnet werden
+
+
+// Bereichte Lookup Tabelle vor, pro Umverteilung: Auf welchem Bericht wird sie eingesetzt
+BerichtInDemMappingVerwendetWird:
+MAPPING LOAD 
+	Umverteil, 
+    Only(Bericht)
+RESIDENT
+	BerichtZeilen0
+WHERE
+    Len(Umverteil)
+GROUP BY
+    Umverteil;
+    
+
+ 
+// Baue Lookup, welche Zeit_IDs es pro Umverteilung gibt, falls in den Mappings ein "*" verwendet wird.    
+BetriebBerichtDatenart:
+LOAD 
+	Umverteil, 
+    Only(Betrieb_ID & '|' & Bericht & '|' & Datenart) AS %BBD
+RESIDENT
+	BerichtZeilen0
+WHERE
+    Len(Umverteil)
+GROUP BY
+    Umverteil;
+
+LEFT JOIN (BetriebBerichtDatenart)
+ LOAD DISTINCT
+	Betrieb_ID & '|' & Bericht & '|' & Datenart AS %BBD,
+    Zeit_ID
+RESIDENT
+	BerichtZeilen0;
+
+
+// Richte Tabelle "Umverteilungen" her ...
+
+
+Umverteilungen0:
+LOAD 
+    Umverteil, Zeit_ID AS Zeit_ID0, 
+    'IST' AS Datenart, 
+    NewNodeName, 
+    AufteilSchluessel,
+    If(Len(BerichtNeu)
+        ,BerichtNeu
+        ,ApplyMap('BerichtInDemMappingVerwendetWird', Umverteil, Null())
+    ) AS BerichtNeu
+    
+// Wenn ein BerichtNeu nicht angegeben wird, wird der gleiche Bericht eingesetzt, in dem das Mappingkürzel 
+// verwendet wurde.
+RESIDENT 
+    Umverteilungen;
+
+
+// Finde die Gesamtsumme pro Zeit_ID (Monat) und Umverteil Tabelle
+LEFT JOIN (Umverteilungen0)
+LOAD
+	// JOIN ON
+    Umverteil,
+	Zeit_ID0,
+    // Add field
+	Sum(AufteilSchluessel) AS AufteilSum 
+RESIDENT 
+	Umverteilungen0
+GROUP BY
+	Umverteil, Zeit_ID0;
+
+// Wenn "*" als Zeit_ID verwendet wird, splitte diese Zeile mit allen für diese Betrieb, Bericht, Datenart  
+// bekannten Zeit_IDs  
+LEFT JOIN (Umverteilungen0)
+LOAD 
+  // JOIN ON
+    '*' AS Zeit_ID0,
+    Umverteil,
+ // Add Field
+    Zeit_ID AS Zeit_ID.joined
+RESIDENT    
+	BetriebBerichtDatenart;
+
+DROP TABLE BetriebBerichtDatenart;
+
+/*
+IF NoOfRows('Umverteilungen0') <> NoOfRows('Umverteilungen') THEN
+	[Fehler: Beim ein-joinen von AufteilSum oder Zeit_ID.joined kam es zu verdoppelungen von Datensätzen in "Umverteilung0" Tabelle.];
+END IF
+*/
+
+DROP TABLE Umverteilungen;
+
+
+Umverteilungen:
+LOAD 
+	*, Coalesce(Zeit_ID.joined, Zeit_ID0) AS Zeit_ID
+RESIDENT
+	Umverteilungen0;
+
+DROP TABLE Umverteilungen0;
+DROP FIELDS Zeit_ID.joined, Zeit_ID0 FROM Umverteilungen;
+
+
+SUB CheckDoppelteVerwendungVonMappings
+
+    // Prüfe: ist ein Mapping auch nur einmalig verwendet? Fehler wenn nicht.
+
+    MultipleMappingsCheck:
+    LOAD 
+        Umverteil AS [Umverteil~], 
+        WoVerwendet
+    WHERE CountFreq > 1;
+    LOAD
+        Umverteil,
+        Count(DISTINCT Hash256(Betrieb_ID, Bericht, Path)) AS CountFreq,
+        Concat(DISTINCT '[' & Betrieb_ID & ']' & Bericht & ':' & Path, '; ') AS WoVerwendet
+    RESIDENT
+        BerichtZeilen0
+    WHERE
+        Len(Umverteil)
+    GROUP BY
+        Umverteil;
+
+    IF NoOfRows('MultipleMappingsCheck') > 0 THEN
+        TRACE ERROR: Du hast Mapping Kürzel an mehreren Stellen eingesetzt. Das ist nicht vorgesehen:;
+        FOR vLoop = 1 TO NoOfRows('MultipleMappingsCheck')
+            LET vMsg = Peek('Umverteil~', vLoop-1, 'MultipleMappingsCheck') & ' in ' & Peek('WoVerwendet', vLoop-1, 'MultipleMappingsCheck');
+            TRACE `$(vMsg)`;
+        NEXT vLoop
+        [ ▲ siehe Fehler ]; // beendet die Verarbeitung
+    END IF
+
+    DROP TABLE MultipleMappingsCheck;
+
+
+END SUB
+
+
+SUB ErzeugeWarnungen
+
+
+    MappingWarnings:
+    LOAD 
+        UmverteilBericht³ AS Warnung.Umverteil
+        ,Betrieb_ID³ AS Warnung.Betrieb_ID
+        ,Datenart³ AS Warnung.Datenart
+        ,Bericht³ AS Warnung.Bericht
+        ,If(Count(DISTINCT Zeit_ID³) = 1, Only(Zeit_ID³)
+           ,If(Count(DISTINCT Zeit_ID³) > 2, Min(Zeit_ID³) & '..' & Max(Zeit_ID³) & ' (' & Count(DISTINCT Zeit_ID³) & 'x)', 
+           Min(Zeit_ID³) & '; ' & Max(Zeit_ID³))) AS Warnung.Zeit_ID    
+        ,Concat(DISTINCT Path³, '; ') AS Warnung.Path
+        ,'Mapping in effektUmverteil nicht gefunden' AS Warnung.Text
+    RESIDENT
+        KorrNachUmverteil2
+    WHERE
+        IsNull(Wert³)
+    GROUP BY
+        UmverteilBericht³, Betrieb_ID³, Datenart³, Bericht³;
+
+    CONCATENATE (MappingWarnings)
+    LOAD 
+        Umverteil AS Warnung.Umverteil
+        ,Betrieb_ID AS Warnung.Betrieb_ID
+        ,Datenart AS Warnung.Datenart
+        ,Bericht AS Warnung.Bericht
+        ,If(Count(DISTINCT Zeit_ID) = 1, Only(Zeit_ID)
+           ,If(Count(DISTINCT Zeit_ID) > 2, Min(Zeit_ID) & '..' & Max(Zeit_ID) & ' (' & Count(DISTINCT Zeit_ID) & 'x)', 
+           Min(Zeit_ID) & '; ' & Max(Zeit_ID))) AS Warnung.Zeit_ID
+        ,Concat(DISTINCT Path, '; ') AS Warnung.Path
+        ,'Mapping in Umverteil nicht gefunden' AS Warnung.Text
+    RESIDENT
+        BerichtZeilen1
+    WHERE
+        Len(Umverteil) AND Umverteil <> UmverteilWorked
+    GROUP BY
+        Umverteil, Betrieb_ID, Datenart, Bericht;
+
+END SUB
+
+
+
+CALL CheckDoppelteVerwendungVonMappings;
+
+// Schritt F
+
+BerichtZeilenVorUmverteil:
+LOAD 
+	Betrieb_ID   AS Betrieb_ID²
+    ,Zeit_ID     AS Zeit_ID²
+    ,Bericht     AS Bericht² 
+    ,Datenart    AS Datenart² 
+    ,Umverteil   AS Umverteil²
+    ,Count(Wert) AS [#Werte²]
+    ,Only(Wert)  AS Wert²
+RESIDENT
+    BerichtZeilen0
+WHERE
+	Len(Umverteil)
+GROUP BY
+    Betrieb_ID, Zeit_ID, Bericht, Datenart, Umverteil;
+
+IF FieldValueCount('#Werte²') > 1 OR FieldValue('#Werte²', 1) > 1 THEN
+	[Logik-Fehler bei der Verdichtung, mehrere Werte pro Betrieb_ID, Zeit_ID, Bericht, Datenart, Umverteil];
+ENDIF
+
+// Schritt G Splitten ("explodieren") der original Werte
+LEFT JOIN (BerichtZeilen0)
+LOAD 
+// JOIN ON 
+    Zeit_ID
+    ,Datenart
+    ,Umverteil
+//  Bericht,
+// Neue felder
+    ,Umverteil AS UmverteilWorked
+    ,NewNodeName
+    ,BerichtNeu
+    ,AufteilSchluessel
+    ,AufteilSum
+RESIDENT
+	Umverteilungen;
+    
+DROP TABLE Umverteilungen;
+
+
+// Schritt H: BerichtZeilen0 nochmals neu laden und Wert aliquotieren, NewNodeName in den Pfad
+// einsetzen wo verwendet. Nach der Modifikation von Path müssen die Felder Label, L1 L2 L3 L4 L5
+// L1L2 L1L2L3 L1L2L3L4 L1L2L3L4L5 neu berechnet werden (Level bleibt jedoch gleich)
+
+BerichtZeilen1:
+NOCONCATENATE LOAD
+    *
+    ,If(Len(L2), L1 & '\' & L2) AS L1L2
+    ,If(Len(L3), L1 & '\' & L2 & '\' & L3) AS L1L2L3
+    ,If(Len(L4), L1 & '\' & L2 & '\' & L3 & '\' & L4) AS L1L2L3L4
+    ,If(Len(L5), L1 & '\' & L2 & '\' & L3 & '\' & L4 & '\' & L5) AS L1L2L3L4L5
+;
+LOAD
+    *
+    ,SubField(Path, '\', 1) AS L1
+    ,SubField(Path, '\', 2) AS L2
+    ,SubField(Path, '\', 3) AS L3
+    ,SubField(Path, '\', 4) AS L4
+    ,SubField(Path, '\', 5) AS L5
+    ,SubField(Path, '\', -1) AS PathEnd
+;
+LOAD
+	Betrieb_ID
+    ,Zeit_ID
+    ,Datenart
+	,Coalesce(BerichtNeu, Bericht) AS Bericht
+    ,If(IsNull(NewNodeName)
+        ,Path
+        ,Left(Path, Index(Path,'\',SubstringCount(Path,'\'))) & NewNodeName
+      ) AS Path    
+    ,Coalesce(Wert * AufteilSchluessel / AufteilSum, Wert)          AS Wert
+    ,If(Len(UmverteilWorked), Wert & ' gesplittet durch ' & Umverteil 
+       & ' (' & AufteilSchluessel & ' / ' & AufteilSum & ' Teile)') AS UmverteilInfo
+    ,Umverteil
+    ,UmverteilWorked
+    ,effektUmverteil 
+    ,Coalesce(NewNodeName, Label) AS Label
+    ,$(vWeitereFelder)
+RESIDENT
+	BerichtZeilen0;
+
+
+// Schritt J: Behalte nur die BerichtZeilenVorUmverteil, die auch umverteilt wurden ...
+INNER JOIN (BerichtZeilenVorUmverteil)
+LOAD DISTINCT
+  // JOIN ON all the below fields, no new fields added
+    Betrieb_ID AS Betrieb_ID²
+    ,Zeit_ID AS Zeit_ID²
+    ,Bericht AS Bericht²
+    ,Datenart AS Datenart²
+    ,UmverteilWorked AS Umverteil²
+RESIDENT
+    BerichtZeilen1;
+
+// Schritt K: Verdichte die Korrekturen durch Summieren in einer neuen Tabelle,
+// wo UmverteilWorked
+KorrNachUmverteil:
+LOAD
+	Betrieb_ID AS Betrieb_ID³
+    ,Zeit_ID AS Zeit_ID³
+    ,Datenart AS Datenart³
+    ,Umverteil & '|' & Bericht AS UmverteilBericht³
+    ,Sum(Wert) AS Wert³
+RESIDENT
+    BerichtZeilen1
+WHERE
+	Len(UmverteilWorked)
+GROUP BY
+    Betrieb_ID, Zeit_ID, Bericht, Datenart, Umverteil;
+
+
+// Schritt L Füge BerichtZeilen vor der Umverteilung hinzu, drehe das Vorzeichen von Wert,
+// denn jene BerichtZeilen müssen subtrahiert werden vom original Wert eines Knotenpunktes
+CONCATENATE (KorrNachUmverteil)
+LOAD 
+	Betrieb_ID²                  AS Betrieb_ID³
+    ,Zeit_ID²                    AS Zeit_ID³
+  //,Bericht²                    AS Bericht³
+    ,Umverteil² & '|' & Bericht² AS UmverteilBericht³
+    ,Datenart²                   AS Datenart³
+    ,-Wert²                      AS Wert³
+RESIDENT
+	BerichtZeilenVorUmverteil;
+
+
+// Schritt M Verdichte mehrere BerichtZeilen in eine Zeile
+KorrNachUmverteil2:
+NOCONCATENATE LOAD
+    Betrieb_ID³, 
+    Zeit_ID³, 
+    UmverteilBericht³,
+    Datenart³,
+    Sum(Wert³) AS Wert³
+RESIDENT
+	KorrNachUmverteil
+GROUP BY
+    Betrieb_ID³, Zeit_ID³, Datenart³, UmverteilBericht³;
+    
+DROP TABLE KorrNachUmverteil;
+
+
+// Schritt N : Füge die tatsächlichen Pfade in die Korrekturen hinzu (explodiert die bisherige
+// KorrNachUmverteil2 Tabelle)
+OUTER JOIN (KorrNachUmverteil2)
+// Wenn wir nicht nach mappings, die nicht gegriffen haben, suchen wollten, könnte man hier auch INNER JOIN 
+// machen. Relevant fürs Einfügen in BerichtZeilen1 sind nachher nur die Zeilen wo Wert³ und effektVorzeichen³ gefüllt sind.
+LOAD
+  // JOIN ON
+	Betrieb_ID                            AS Betrieb_ID³
+    ,Zeit_ID                              AS Zeit_ID³
+    ,Datenart                             AS Datenart³
+    // wenn effektUmverteil keinen '|{Bericht}' Teil hat, fülle ihn mit dem Bericht dieser Zeile auf
+    ,If(effektUmverteil LIKE '-*', Mid(effektUmverteil,2), effektUmverteil) 
+       & If(NOT effektUmverteil LIKE '*|*', '|' & Bericht) AS UmverteilBericht³
+  // Add fields
+    ,Bericht                              AS Bericht³
+    ,Path                                 AS Path³
+     ,If(effektUmverteil LIKE '-*', -1, 1) AS effektVorzeichen³
+    ,$(vWeitereFelder)
+;
+LOAD  // Mache aus strichpunkt-separierten Angaben mehrere Zeilen
+	Betrieb_ID 
+    ,Zeit_ID  
+    ,Bericht   
+    ,Datenart
+    ,Path      
+    ,Trim(SubField(effektUmverteil,';')) AS effektUmverteil
+   ,$(vWeitereFelder)
+RESIDENT
+	BerichtZeilen0
+WHERE
+	Len(effektUmverteil)
+;
+
+
+// Schritt Q Füge die Korrekturen in die BerichtZeilen0 und drehe ggf. das Vorzeichen von Wert
+CONCATENATE (BerichtZeilen1)
+LOAD 
+    *
+    ,If(Len(L2), L1 & '\' & L2) AS L1L2
+    ,If(Len(L3), L1 & '\' & L2 & '\' & L3) AS L1L2L3
+    ,If(Len(L4), L1 & '\' & L2 & '\' & L3 & '\' & L4) AS L1L2L3L4
+    ,If(Len(L5), L1 & '\' & L2 & '\' & L3 & '\' & L4 & '\' & L5) AS L1L2L3L4L5
+;
+LOAD
+    *
+    ,SubField(Path, '\', 1) AS L1
+    ,SubField(Path, '\', 2) AS L2
+    ,SubField(Path, '\', 3) AS L3
+    ,SubField(Path, '\', 4) AS L4
+    ,SubField(Path, '\', 5) AS L5
+;
+LOAD
+    Betrieb_ID³                    AS Betrieb_ID
+    ,Zeit_ID³                      AS Zeit_ID
+    ,Bericht³                      AS Bericht
+    ,Datenart³                     AS Datenart
+    ,Path³                         AS Path
+    ,Wert³ * effektVorzeichen³     AS Wert
+    ,SubField(Path³, '\', -1)      AS Label
+    ,'Korrektur nach Umverteilung ' & PurgeChar(effektVorzeichen³,'1') & UmverteilBericht³ 
+                                   AS UmverteilInfo
+    ,$(vWeitereFelder)          
+RESIDENT
+    KorrNachUmverteil2
+WHERE
+    Len(Wert³) AND Len(effektVorzeichen³);
+
+DROP TABLES BerichtZeilen0, BerichtZeilenVorUmverteil;
+DROP FIELDS $(vWeitereFelder) FROM KorrNachUmverteil2; // keine synthetischen Keys, wenn man die Tabelle betrachten will
+
+CALL ErzeugeWarnungen;
+DROP TABLE KorrNachUmverteil2;
+
+
